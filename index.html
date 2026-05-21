@@ -29,6 +29,7 @@
                     <p>Objects tracked: <span id="ui-tracked-count">0</span></p> 
                     <p>Time: <span id="ui-time">0.0</span></p>
                     <p>Warp: <span id="ui-warp">1</span>x</p>
+                    <button id="btn-view-mode" class="btn" style="margin-top: 10px; width: 100%; border-color: #00ffcc; color: #00ffcc;">VIEW: GLOBAL (GM)</button>
                 </div>
                 
                 <div class="ui-panel">
@@ -48,12 +49,14 @@
                     <p>ID: <span id="tgt-name">---</span></p>
                     <p>CLASS: <span id="tgt-type">---</span></p>
                     
+                    <!-- Замени старый <div id="maneuver-ui"...> на этот: -->
                     <div id="maneuver-ui" style="display: none; margin-top: 15px; border-top: 1px solid var(--accent-dim); padding-top: 10px;">
                         <p style="color: #ffaa00; font-size: 11px; margin-bottom: 5px;">MANEUVER PLANNER</p>
                         <div style="display: flex; gap: 5px; flex-direction: column;">
-                            <label>COURSE (0-360°): <input type="number" id="inp-course" class="ui-input"></label>
-                            <label>DELTA-V: <input type="number" id="inp-dv" class="ui-input"></label>
-                            <button class="btn" style="border-color: #ffaa00; color: #ffaa00;">AUTHORIZE BURN</button>
+                            <label>COURSE (0-360°): <input type="number" id="inp-course" class="ui-input" value="0"></label>
+                            <label>DELTA-V: <input type="number" id="inp-dv" class="ui-input" value="2"></label>
+                            <label title="Ожидание перед маневром в секундах симуляции">DELAY (s): <input type="number" id="inp-delay" class="ui-input" value="0"></label>
+                            <button id="btn-burn" class="btn" style="border-color: #ffaa00; color: #ffaa00;">UPLOAD NODE</button>
                         </div>
                     </div>
                 </div>

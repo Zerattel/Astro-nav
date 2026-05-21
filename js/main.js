@@ -6,17 +6,17 @@ import { Ship } from './entities/Ship.js'; // Подключаем класс к
 
 const renderer = new Renderer('star-map');
 const timeManager = new TimeManager();
+const C_SPEED = 100;
 
 // Обрати внимание на последний параметр (omega). Теперь орбиты повернуты!
-const sun = new CelestialBody("Sol-Prime", "star", 15);
-const p1 = new CelestialBody("Icarus", "planet", 6, sun, 150, 0.2, 0, 0);
-const p2 = new CelestialBody("Goliath", "planet", 12, sun, 450, 0.05, 100, Math.PI / 4); // Повернута на 45 град
-const m1 = new CelestialBody("Titan", "moon", 3, p2, 40, 0.1, 0, -Math.PI / 6);
-const p3 = new CelestialBody("Pluto-X", "planet", 4, sun, 800, 0.7, 500, Math.PI / 2); // Повернута на 90 град
+const sun = new CelestialBody("Sol-Prime", "star", 15, null, 0, 0, 0, 0, 5000); 
+const p1 = new CelestialBody("Icarus", "planet", 6, sun, 150, 0.2, 0, 0, 100);
+const p2 = new CelestialBody("Goliath", "planet", 12, sun, 450, 0.05, 100, Math.PI / 4, 800);
+const m1 = new CelestialBody("Titan", "moon", 3, p2, 40, 0.1, 0, -Math.PI / 6, 10);
+const p3 = new CelestialBody("Pluto-X", "planet", 4, sun, 800, 0.7, 500, Math.PI / 2, 50);
 
-// КОРАБЛИ (находятся на орбитах)
-const ship1 = new Ship("UNS-Ares", "Корвет", p2, 70, 0, 0); // На орбите Голиафа
-const ship2 = new Ship("Trident-9", "Фрегат", sun, 300, 0.4, 0, Math.PI); // Вытянутая орбита вокруг звезды
+const ship1 = new Ship("UNS-Ares", "Корвет", p2, 70, 0, 0); 
+const ship2 = new Ship("Trident-9", "Фрегат", sun, 300, 0.4, 0, Math.PI);
 
 const systemEntities = [sun, p1, p2, m1, p3, ship1, ship2];
 
@@ -27,6 +27,12 @@ const btnPause = document.getElementById('btn-pause');
 const btnRand = document.getElementById('btn-rand');
 const warpButtons = document.querySelectorAll('.btn-warp');
 const uiTrackedCount = document.getElementById('ui-tracked-count');
+const btnBurn = document.getElementById('btn-burn');
+const inpCourse = document.getElementById('inp-course');
+const inpDv = document.getElementById('inp-dv');
+const inpDelay = document.getElementById('inp-delay');
+const btnViewMode = document.getElementById('btn-view-mode');
+let viewObserver = null; // null = Global view, объект = Tactical view
 
 // UI Выделенной цели
 let selectedEntity = null;
@@ -84,6 +90,49 @@ renderer.canvas.addEventListener('click', (e) => {
     }
 });
 
+btnBurn.addEventListener('click', () => {
+    if (selectedEntity && selectedEntity.type === 'ship') {
+        const course = parseFloat(inpCourse.value);
+        const dv = parseFloat(inpDv.value);
+        const delay = parseFloat(inpDelay.value);
+        
+        if (isNaN(course) || isNaN(dv) || isNaN(delay)) {
+            alert("SYS ERROR: Invalid input.");
+            return;
+        }
+        
+        // Вычисляем абсолютное время, когда маневр должен произойти
+        const executionTime = timeManager.time + delay;
+        
+        // Загружаем маневр в бортовой компьютер корабля
+        selectedEntity.planManeuver(course, dv, executionTime);
+        
+        // Кнопка мигает для подтверждения
+        btnBurn.innerText = "NODE UPLOADED";
+        setTimeout(() => btnBurn.innerText = "UPLOAD NODE", 1500);
+    }
+});
+
+btnViewMode.addEventListener('click', () => {
+    if (viewObserver === null) {
+        // Пытаемся включить тактический вид
+        if (selectedEntity && selectedEntity.type === 'ship') {
+            viewObserver = selectedEntity;
+            btnViewMode.innerText = `VIEW: TACTICAL [${selectedEntity.name}]`;
+            btnViewMode.style.borderColor = "#ff0044";
+            btnViewMode.style.color = "#ff0044";
+        } else {
+            alert("SYS: Select a ship first to enter Tactical View.");
+        }
+    } else {
+        // Возвращаемся в глобальный вид
+        viewObserver = null;
+        btnViewMode.innerText = "VIEW: GLOBAL (GM)";
+        btnViewMode.style.borderColor = "#00ffcc";
+        btnViewMode.style.color = "#00ffcc";
+    }
+});
+
 // ... (обработчики кнопок времени остаются как были) ...
 btnPause.addEventListener('click', () => {
     const isPaused = timeManager.togglePause();
@@ -110,21 +159,33 @@ function renderLoop() {
 
     renderer.clear();
 
+    // 1. Физика: Обновляем РЕАЛЬНЫЕ позиции (для маневров и столкновений)
     sun.updatePosition(timeManager.time);
 
+    // 2. Релятивность: Вычисляем ВИДИМЫЕ позиции (с учетом задержки света)
+    sun.updateRenderPosition(viewObserver, timeManager.time, C_SPEED);
+
+    // 3. Отрисовка
     systemEntities.forEach(entity => {
+        // Рисуем орбиту (сдвигаем ее туда, где мы ВИДИМ родителя)
         if (entity.parent) {
-            const orbitPath = entity.getAbsoluteOrbitPath();
-            renderer.drawOrbit(orbitPath);
+            const path = generateOrbitPath(entity.a, entity.e, entity.omega); // из Kepler.js
+            const renderPath = path.map(p => ({
+                x: p.x + entity.parent.renderX, 
+                y: p.y + entity.parent.renderY
+            }));
+            renderer.drawOrbit(renderPath);
         }
+        
+        // Рисуем сам объект
         renderer.drawEntity(entity);
         
-        // Подсветка выделенного объекта
+        // Подсветка выделенного объекта (используем renderX/renderY!)
         if (entity === selectedEntity) {
-            const screenPos = renderer.toScreen(entity.x, entity.y);
+            const screenPos = renderer.toScreen(entity.renderX, entity.renderY);
             renderer.ctx.beginPath();
             renderer.ctx.arc(screenPos.x, screenPos.y, (entity.radius * renderer.zoom) + 10, 0, Math.PI * 2);
-            renderer.ctx.strokeStyle = '#ffaa00'; // Оранжевый хазард-цвет
+            renderer.ctx.strokeStyle = '#ffaa00';
             renderer.ctx.setLineDash([4, 4]);
             renderer.ctx.stroke();
             renderer.ctx.setLineDash([]);

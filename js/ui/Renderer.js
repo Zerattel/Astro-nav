@@ -141,7 +141,7 @@ export class Renderer {
         });
     }
     drawEntity(entity) {
-        const screenPos = this.toScreen(entity.x, entity.y);
+        const screenPos = this.toScreen(entity.renderX, entity.renderY);
         const r = Math.max(entity.radius * this.zoom, 2);
 
         this.ctx.beginPath();

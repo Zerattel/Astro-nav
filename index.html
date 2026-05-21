@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Astro-Nav: Tactical System</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Зона карты -->
+        <main class="viewport">
+            <canvas id="star-map"></canvas>
+            <div class="viewport-overlay">
+                <div class="hazard-line top"></div>
+                <div class="overlay-text">SYS. NAV. ONLINE // KEPLER-MODE</div>
+            </div>
+        </main>
+
+        <!-- Боковая панель UI -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>ASTRO-NAV</h2>
+                <div class="decor-angle"></div>
+            </div>
+            <div class="sidebar-content">
+                <div class="ui-panel">
+                    <h3>SYSTEM STATUS</h3>
+                    <p>Objects tracked: <span id="ui-tracked-count">0</span></p> 
+                    <p>Time: <span id="ui-time">0.0</span></p>
+                    <p>Warp: <span id="ui-warp">1</span>x</p>
+                </div>
+                
+                <div class="ui-panel">
+                    <h3>TIME CONTROLS</h3>
+                    <div style="display: flex; gap: 5px; margin-bottom: 10px;">
+                        <button id="btn-pause" class="btn">|| PAUSE</button>
+                        <button id="btn-rand" class="btn">? RAND</button>
+                    </div>
+                    <div style="display: flex; gap: 5px;">
+                        <button class="btn btn-warp" data-warp="1">1x</button>
+                        <button class="btn btn-warp" data-warp="10">10x</button>
+                        <button class="btn btn-warp" data-warp="100">100x</button>
+                    </div>
+                </div>
+                <div class="ui-panel" id="panel-target" style="display: none;">
+                    <h3>SELECTED TARGET</h3>
+                    <p>ID: <span id="tgt-name">---</span></p>
+                    <p>CLASS: <span id="tgt-type">---</span></p>
+                    
+                    <div id="maneuver-ui" style="display: none; margin-top: 15px; border-top: 1px solid var(--accent-dim); padding-top: 10px;">
+                        <p style="color: #ffaa00; font-size: 11px; margin-bottom: 5px;">MANEUVER PLANNER</p>
+                        <div style="display: flex; gap: 5px; flex-direction: column;">
+                            <label>COURSE (0-360°): <input type="number" id="inp-course" class="ui-input"></label>
+                            <label>DELTA-V: <input type="number" id="inp-dv" class="ui-input"></label>
+                            <button class="btn" style="border-color: #ffaa00; color: #ffaa00;">AUTHORIZE BURN</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Подключаем главный скрипт как модуль -->
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>

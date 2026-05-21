@@ -1,0 +1,158 @@
+:root {
+    --bg-color: #050505;
+    --fg-color: #ffffff;
+    --accent-dim: rgba(255, 255, 255, 0.15);
+    --hazard-bg: repeating-linear-gradient(
+        45deg,
+        #000,
+        #000 10px,
+        #fff 10px,
+        #fff 20px
+    );
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--fg-color);
+    font-family: 'Courier New', Courier, monospace;
+    overflow: hidden; /* Запрещаем скролл, всё внутри приложения */
+    display: flex;
+    height: 100vh;
+}
+
+.app-container {
+    display: flex;
+    width: 100%;
+    height: 100%;
+}
+
+/* Зона карты */
+.viewport {
+    flex-grow: 1;
+    position: relative;
+    border-right: 2px solid var(--fg-color);
+}
+
+canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle at center, #111 0%, #000 100%);
+    cursor: crosshair; /* Тактический прицел по умолчанию */
+}
+
+.viewport-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.hazard-line.top {
+    width: 100%;
+    height: 6px;
+    background: var(--hazard-bg);
+    opacity: 0.8;
+}
+
+.overlay-text {
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    font-size: 12px;
+    letter-spacing: 2px;
+    opacity: 0.5;
+}
+
+/* Боковая панель */
+.sidebar {
+    width: 350px;
+    background: linear-gradient(180deg, var(--accent-dim) 0%, transparent 100%);
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-header {
+    padding: 20px;
+    border-bottom: 1px solid var(--fg-color);
+    position: relative;
+}
+
+.sidebar-header h2 {
+    font-size: 24px;
+    font-weight: normal;
+    letter-spacing: 4px;
+}
+
+/* Элемент с углом 45 градусов */
+.decor-angle {
+    position: absolute;
+    bottom: -1px;
+    right: 0;
+    width: 40px;
+    height: 10px;
+    background-color: var(--fg-color);
+    clip-path: polygon(10px 0, 100% 0, 100% 100%, 0 100%);
+}
+
+.sidebar-content {
+    padding: 20px;
+    flex-grow: 1;
+}
+
+.ui-panel {
+    border: 1px solid var(--accent-dim);
+    padding: 15px;
+    margin-bottom: 20px;
+    background: linear-gradient(90deg, rgba(255,255,255,0.05) 0%, transparent 100%);
+    /* Срез правого верхнего угла под 45 градусов */
+    clip-path: polygon(0 0, calc(100% - 15px) 0, 100% 15px, 100% 100%, 0 100%);
+}
+
+.ui-panel h3 {
+    font-size: 14px;
+    margin-bottom: 15px;
+    border-bottom: 1px dashed var(--accent-dim);
+    padding-bottom: 5px;
+}
+
+.btn {
+    background-color: transparent;
+    border: 1px solid var(--fg-color);
+    color: var(--fg-color);
+    padding: 8px 12px;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    flex-grow: 1;
+    transition: all 0.2s;
+}
+
+.btn:hover {
+    background-color: var(--fg-color);
+    color: var(--bg-color);
+}
+
+.btn.active {
+    background-color: var(--accent-dim);
+    border-color: var(--accent-dim);
+}
+
+.ui-input {
+    background: transparent;
+    border: 1px solid var(--accent-dim);
+    color: var(--fg-color);
+    font-family: inherit;
+    font-size: 12px;
+    padding: 4px;
+    width: 60px;
+    float: right;
+}

@@ -4,7 +4,6 @@ import { TimeManager } from './engine/TimeManager.js';
 import { CelestialBody } from './entities/CelestialBody.js';
 import { Ship } from './entities/Ship.js';
 import { generateOrbitPath, getTimeAtAnomaly } from './physics/Kepler.js';
-const inpDelay = document.getElementById('inp-delay'); // Убедись, что переменная есть наверху
 
 const renderer = new Renderer('star-map');
 const timeManager = new TimeManager();
@@ -303,24 +302,24 @@ function renderLoop() {
 
             // 1. МАГНИТОМЕТР (Не требует Line of Sight)
             if (viewObserver.magActive && dist <= viewObserver.magRange) isVisible = true;
-            if (!isVisible && pastState.magActive) isVisible = true; // Демаскирует на всю карту
+            if (!isVisible && pastState.magActive) isVisible = true;
 
-            // 2. РАДАР (Блокируется планетами в реальности, но для игры оставим как в ТЗ - может бить сквозь что-то, ИЛИ сделаем честно? Сделаем честно: Радар тоже блокируется массивными объектами, но у него широкий сектор)
-            // Допустим, радар пробивает препятствия, но Ладар - нет. Оставим радар как было:
-            if (viewObserver.radarActive && dist <= viewObserver.radarRange) isVisible = true;
-            if (!isVisible && pastState.radarActive && dist <= entity.radarRange * 2) isVisible = true;
+            // 2. РАДАР (ОБНОВЛЕНО: Теперь строго требует Line of Sight!)
+            if (viewObserver.radarActive && dist <= viewObserver.radarRange && hasLoS) isVisible = true;
+            if (!isVisible && pastState.radarActive && dist <= entity.radarRange * 2 && hasLoS) isVisible = true;
 
-            // 3. ЛАДАР (Строго требует Line of Sight)
+            // 3. ЛАДАР (Требует Line of Sight)
             if (!isVisible && viewObserver.ladarActive && hasLoS) {
                 if (isInLadarCone(viewObserver.renderX, viewObserver.renderY, entity.renderX, entity.renderY, viewObserver.ladarAzimuth)) {
                     isVisible = true;
                 }
             }
-            if (!isVisible && pastState.ladarActive && hasLoS) isVisible = true; // Ладар демаскирует на бесконечность, но только если нет преград!
+            if (!isVisible && pastState.ladarActive && hasLoS) isVisible = true;
 
             // 4. ПАССИВНЫЕ ИЛС и ГРАВИТОМЕТР
             if (pastState.gravSignature) renderer.drawBearing(viewObserver, entity, '#ff00aa', 'GRAV');
-            if (pastState.thermalSignature) renderer.drawBearing(viewObserver, entity, '#ffaa00', 'THERMAL');
+            // Тепловая сигнатура (ИК-диапазон) тоже должна блокироваться планетами
+            if (pastState.thermalSignature && hasLoS) renderer.drawBearing(viewObserver, entity, '#ffaa00', 'THERMAL');
         }
 
         // --- ОТРИСОВКА (если видим) ---

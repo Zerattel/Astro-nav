@@ -140,6 +140,83 @@ export class Renderer {
             }
         });
     }
+
+    drawSensorZones(entity) {
+        const screenPos = this.toScreen(entity.renderX, entity.renderY);
+        
+        // МАГНИТОМЕТР (Синий)
+        if (entity.magActive) {
+            this.ctx.beginPath();
+            this.ctx.arc(screenPos.x, screenPos.y, entity.magRange * this.zoom, 0, Math.PI * 2);
+            this.ctx.fillStyle = 'rgba(0, 150, 255, 0.1)';
+            this.ctx.fill();
+            this.ctx.strokeStyle = 'rgba(0, 150, 255, 0.5)';
+            this.ctx.stroke();
+        }
+
+        // РАДАР (Зеленый)
+        if (entity.radarActive) {
+            this.ctx.beginPath();
+            this.ctx.arc(screenPos.x, screenPos.y, entity.radarRange * this.zoom, 0, Math.PI * 2);
+            this.ctx.fillStyle = 'rgba(0, 255, 204, 0.05)';
+            this.ctx.fill();
+            this.ctx.strokeStyle = 'rgba(0, 255, 204, 0.3)';
+            this.ctx.setLineDash([2, 4]);
+            this.ctx.stroke();
+
+            // Зона демаскировки радара
+            this.ctx.beginPath();
+            this.ctx.arc(screenPos.x, screenPos.y, (entity.radarRange * 2) * this.zoom, 0, Math.PI * 2);
+            this.ctx.strokeStyle = 'rgba(255, 0, 68, 0.2)';
+            this.ctx.setLineDash([10, 10]);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        }
+
+        // ЛАДАР (Красный узкий луч)
+        if (entity.ladarActive) {
+            const azRad = (entity.ladarAzimuth - 90) * (Math.PI / 180);
+            const beamLength = 2000 * this.zoom; // "Бесконечная" отрисовка
+            const beamWidth = 0.05; // Ширина конуса (около 3 градусов)
+
+            this.ctx.beginPath();
+            this.ctx.moveTo(screenPos.x, screenPos.y);
+            this.ctx.lineTo(screenPos.x + Math.cos(azRad - beamWidth) * beamLength, screenPos.y + Math.sin(azRad - beamWidth) * beamLength);
+            this.ctx.lineTo(screenPos.x + Math.cos(azRad + beamWidth) * beamLength, screenPos.y + Math.sin(azRad + beamWidth) * beamLength);
+            this.ctx.closePath();
+            
+            this.ctx.fillStyle = 'rgba(255, 50, 50, 0.15)';
+            this.ctx.fill();
+            this.ctx.strokeStyle = 'rgba(255, 50, 50, 0.8)';
+            this.ctx.stroke();
+        }
+    }
+
+    drawBearing(fromEntity, toEntity, color, label) {
+        const start = this.toScreen(fromEntity.renderX, fromEntity.renderY);
+        const target = this.toScreen(toEntity.renderX, toEntity.renderY);
+        
+        // Рисуем вектор от наблюдателя в сторону цели
+        const dx = target.x - start.x;
+        const dy = target.y - start.y;
+        const angle = Math.atan2(dy, dx);
+        
+        // Линия не идет до самого конца, это просто пеленг (указатель направления)
+        const length = 100; 
+        const endX = start.x + Math.cos(angle) * length;
+        const endY = start.y + Math.sin(angle) * length;
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(start.x, start.y);
+        this.ctx.lineTo(endX, endY);
+        this.ctx.strokeStyle = color;
+        this.ctx.lineWidth = 1;
+        this.ctx.stroke();
+
+        this.ctx.font = '10px Courier New';
+        this.ctx.fillStyle = color;
+        this.ctx.fillText(`[${label} BEARING]`, endX + 5, endY + 5);
+    }
     drawEntity(entity) {
         const screenPos = this.toScreen(entity.renderX, entity.renderY);
         const r = Math.max(entity.radius * this.zoom, 2);
@@ -166,6 +243,15 @@ export class Renderer {
                 this.ctx.lineTo(screenPos.x, screenPos.y + r + 2);
                 this.ctx.lineWidth = 1;
                 this.ctx.stroke();
+                if (entity.soi !== Infinity) {
+                    this.ctx.beginPath();
+                    this.ctx.arc(screenPos.x, screenPos.y, entity.soi * this.zoom, 0, Math.PI * 2);
+                    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)'; // Очень тусклый белый
+                    this.ctx.lineWidth = 1;
+                    this.ctx.setLineDash([5, 10]);
+                    this.ctx.stroke();
+                    this.ctx.setLineDash([]);
+                }
                 break;
 
             case 'station':

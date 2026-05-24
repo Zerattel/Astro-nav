@@ -8,22 +8,17 @@ export function calculatePeriod(a, mu = MU) {
 }
 
 export function calculateTrueAnomaly(t, period, e, timeOffset = 0) {
-    // Нормализуем среднюю аномалию, чтобы избежать багов на долгих симуляциях
     let M = ((t + timeOffset) / period) * Math.PI * 2;
     M = M % (Math.PI * 2);
     if (M < 0) M += Math.PI * 2;
 
     let E = M;
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 30; i++) { // Увеличили с 10 до 30
         const deltaE = (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
         E -= deltaE;
         if (Math.abs(deltaE) < 1e-6) break;
     }
-
-    return 2 * Math.atan2(
-        Math.sqrt(1 + e) * Math.sin(E / 2),
-        Math.sqrt(1 - e) * Math.cos(E / 2)
-    );
+    return 2 * Math.atan2(Math.sqrt(1 + e) * Math.sin(E / 2), Math.sqrt(1 - e) * Math.cos(E / 2));
 }
 
 export function getPositionAtAnomaly(a, e, theta, omega = 0) {
@@ -52,16 +47,22 @@ export function getVelocityAtAnomaly(a, e, theta, omega = 0, mu = MU) {
 export function cartesianToKepler(x, y, vx, vy, time, mu = MU) {
     const r = Math.sqrt(x * x + y * y);
     const vSq = vx * vx + vy * vy;
-    const h = x * vy - y * vx; // Момент импульса
+    const h = x * vy - y * vx;
     
-    const epsilon = (vSq / 2) - (mu / r); // Специфическая энергия
-    const a = -mu / (2 * epsilon);
+    const epsilon = (vSq / 2) - (mu / r);
+    let a = -mu / (2 * epsilon);
     
     const ex = (vy * h) / mu - (x / r);
     const ey = (-vx * h) / mu - (y / r);
     let e = Math.sqrt(ex * ex + ey * ey);
 
-    if (e >= 1) return { error: "escape" }; // Защита от вылета из системы (гиперболы)
+    // --- ТРЮК "ФАЛЬШИВАЯ ГИПЕРБОЛА" ДЛЯ ГРАВИТАЦИОННЫХ МАНЕВРОВ ---
+    if (e >= 1) {
+        // Вычисляем дистанцию перицентра (ближайшей точки) оригинальной гиперболы
+        const r_p = a * (1 - e); 
+        e = 0.999; // Делаем орбиту эллипсом, граничащим с параболой
+        a = r_p / (1 - e); // Вытягиваем орбиту так, чтобы сохранить перицентр
+    }
 
     const omega = Math.atan2(ey, ex);
 

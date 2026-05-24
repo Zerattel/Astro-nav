@@ -59,6 +59,23 @@
                             <button id="btn-burn" class="btn" style="border-color: #ffaa00; color: #ffaa00;">UPLOAD NODE</button>
                         </div>
                     </div>
+                    <div id="sensors-ui" style="display: none; margin-top: 15px; border-top: 1px solid var(--accent-dim); padding-top: 10px;">
+                        <p style="color: #00ffcc; font-size: 11px; margin-bottom: 5px;">ACTIVE SENSORS</p>
+                        <div style="display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px;">
+                            <label style="cursor: pointer;"><input type="checkbox" id="chk-radar"> RADAR (150 AU)</label>
+                            <label style="cursor: pointer;"><input type="checkbox" id="chk-mag"> MAGNETOMETER (50 AU)</label>
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <label style="cursor: pointer;"><input type="checkbox" id="chk-ladar"> LADAR (BEAM)</label>
+                                <label style="font-size: 10px;">AZ: <input type="number" id="inp-ladar-az" class="ui-input" style="width: 40px;" value="0"></label>
+                            </div>
+                        </div>
+
+                        <p style="color: #ff0044; font-size: 11px; margin-bottom: 5px;">GM OVERRIDES (PASSIVE SIGNATURES)</p>
+                        <div style="display: flex; flex-direction: column; gap: 5px;">
+                            <label style="cursor: pointer;"><input type="checkbox" id="chk-grav"> GRAV-SIGNATURE</label>
+                            <label style="cursor: pointer;"><input type="checkbox" id="chk-thermal"> THERMAL (ILS) SIGNATURE</label>
+                        </div>
+                    </div>
                 </div>
             </div>
         </aside>

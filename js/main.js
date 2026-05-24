@@ -2,7 +2,8 @@
 import { Renderer } from './ui/Renderer.js';
 import { TimeManager } from './engine/TimeManager.js';
 import { CelestialBody } from './entities/CelestialBody.js';
-import { Ship } from './entities/Ship.js'; // Подключаем класс корабля
+import { Ship } from './entities/Ship.js';
+import { generateOrbitPath } from './physics/Kepler.js';
 
 const renderer = new Renderer('star-map');
 const timeManager = new TimeManager();
@@ -32,7 +33,14 @@ const inpCourse = document.getElementById('inp-course');
 const inpDv = document.getElementById('inp-dv');
 const inpDelay = document.getElementById('inp-delay');
 const btnViewMode = document.getElementById('btn-view-mode');
-let viewObserver = null; // null = Global view, объект = Tactical view
+let viewObserver = null;
+const sensorsUI = document.getElementById('sensors-ui');
+const chkRadar = document.getElementById('chk-radar');
+const chkMag = document.getElementById('chk-mag');
+const chkLadar = document.getElementById('chk-ladar');
+const inpLadarAz = document.getElementById('inp-ladar-az');
+const chkGrav = document.getElementById('chk-grav');
+const chkThermal = document.getElementById('chk-thermal');
 
 // UI Выделенной цели
 let selectedEntity = null;
@@ -80,10 +88,20 @@ renderer.canvas.addEventListener('click', (e) => {
         
         if (selectedEntity.type === 'ship') {
             tgtType.innerText = `SHIP [${selectedEntity.shipClass}]`;
-            maneuverUI.style.display = 'block'; // Показываем панель маневров
+            maneuverUI.style.display = 'block';
+            sensorsUI.style.display = 'block'; // Показываем панель сенсоров
+            
+            // Синхронизируем галочки с состоянием корабля
+            chkRadar.checked = selectedEntity.radarActive;
+            chkMag.checked = selectedEntity.magActive;
+            chkLadar.checked = selectedEntity.ladarActive;
+            inpLadarAz.value = selectedEntity.ladarAzimuth;
+            chkGrav.checked = selectedEntity.gravSignature;
+            chkThermal.checked = selectedEntity.thermalSignature;
         } else {
             tgtType.innerText = selectedEntity.type.toUpperCase();
-            maneuverUI.style.display = 'none'; // Скрываем панель маневров для планет
+            maneuverUI.style.display = 'none';
+            sensorsUI.style.display = 'none'; // Скрываем для планет
         }
     } else {
         panelTarget.style.display = 'none';
@@ -152,6 +170,53 @@ warpButtons.forEach(btn => {
     });
 });
 
+chkRadar.addEventListener('change', () => selectedEntity?.toggleRadar(timeManager.time));
+chkMag.addEventListener('change', () => selectedEntity?.toggleMag(timeManager.time));
+chkLadar.addEventListener('change', () => selectedEntity?.toggleLadar(timeManager.time));
+inpLadarAz.addEventListener('change', () => selectedEntity?.setLadarAzimuth(parseFloat(inpLadarAz.value), timeManager.time));
+chkGrav.addEventListener('change', () => selectedEntity?.toggleGravSignature(timeManager.time));
+chkThermal.addEventListener('change', () => selectedEntity?.toggleThermal(timeManager.time));
+
+// Функция проверки преград (лун, планет) между точкой А и точкой Б
+function isLineOfSightClear(x1, y1, x2, y2) {
+    for (const body of systemEntities) {
+        // Корабли и станции не перекрывают видимость для Ладара
+        if (body.type === 'ship' || body.type === 'station') continue; 
+        
+        // Векторная математика: находим кратчайшее расстояние от центра планеты до луча
+        const l2 = Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2);
+        if (l2 === 0) continue;
+        
+        // Проекция точки (планеты) на отрезок луча
+        let t = ((body.renderX - x1) * (x2 - x1) + (body.renderY - y1) * (y2 - y1)) / l2;
+        t = Math.max(0, Math.min(1, t)); // Ограничиваем отрезком от 0 до 1
+        
+        const projX = x1 + t * (x2 - x1);
+        const projY = y1 + t * (y2 - y1);
+        
+        const distToLine = Math.hypot(body.renderX - projX, body.renderY - projY);
+        
+        // Если луч прошел ближе к центру планеты, чем ее радиус — он заблокирован!
+        if (distToLine < body.radius) {
+            return false; 
+        }
+    }
+    return true;
+}
+
+// Функция для проверки, попадает ли цель в узкий сектор Ладара
+function isInLadarCone(observerX, observerY, targetX, targetY, azDeg) {
+    const azRad = (azDeg - 90) * (Math.PI / 180);
+    const angleToTarget = Math.atan2(targetY - observerY, targetX - observerX);
+    
+    // Нормализация разницы углов
+    let diff = Math.abs(angleToTarget - azRad);
+    while (diff > Math.PI) diff = Math.abs(diff - 2 * Math.PI);
+    
+    // Половина ширины луча (0.05 радиан ~ 3 градуса)
+    return diff <= 0.05; 
+}
+
 // --- ГЛАВНЫЙ ЦИКЛ ---
 function renderLoop() {
     timeManager.update();
@@ -159,36 +224,86 @@ function renderLoop() {
 
     renderer.clear();
 
-    // 1. Физика: Обновляем РЕАЛЬНЫЕ позиции (для маневров и столкновений)
-    sun.updatePosition(timeManager.time);
-
-    // 2. Релятивность: Вычисляем ВИДИМЫЕ позиции (с учетом задержки света)
+    sun.updatePosition(timeManager.time, systemEntities);
     sun.updateRenderPosition(viewObserver, timeManager.time, C_SPEED);
 
-    // 3. Отрисовка
+    // Сначала рисуем зоны сенсоров (чтобы они были под кораблями)
+    if (viewObserver && viewObserver.type === 'ship') {
+        renderer.drawSensorZones(viewObserver);
+    } else {
+        // В режиме бога рисуем зоны всех кораблей
+        systemEntities.forEach(e => {
+            if (e.type === 'ship') renderer.drawSensorZones(e);
+        });
+    }
+
     systemEntities.forEach(entity => {
-        // Рисуем орбиту (сдвигаем ее туда, где мы ВИДИМ родителя)
-        if (entity.parent) {
-            const path = generateOrbitPath(entity.a, entity.e, entity.omega); // из Kepler.js
-            const renderPath = path.map(p => ({
-                x: p.x + entity.parent.renderX, 
-                y: p.y + entity.parent.renderY
-            }));
-            renderer.drawOrbit(renderPath);
+        // --- ЛОГИКА ВИДИМОСТИ ---
+        let isVisible = true;
+        
+        if (viewObserver && entity !== viewObserver && entity.type === 'ship') {
+            isVisible = false; 
+            
+            let pastState = entity; 
+            if (entity.orbitalHistory) {
+                 const distanceToTarget = Math.hypot(entity.renderX - viewObserver.renderX, entity.renderY - viewObserver.renderY);
+                 const tPast = timeManager.time - (distanceToTarget / C_SPEED);
+                 pastState = entity.getHistoricalState(tPast);
+            }
+
+            const dist = Math.hypot(entity.renderX - viewObserver.renderX, entity.renderY - viewObserver.renderY);
+            
+            // Проверка преград для Ладара и Радара
+            const hasLoS = isLineOfSightClear(viewObserver.renderX, viewObserver.renderY, entity.renderX, entity.renderY);
+
+            // 1. МАГНИТОМЕТР (Не требует Line of Sight)
+            if (viewObserver.magActive && dist <= viewObserver.magRange) isVisible = true;
+            if (!isVisible && pastState.magActive) isVisible = true; // Демаскирует на всю карту
+
+            // 2. РАДАР (Блокируется планетами в реальности, но для игры оставим как в ТЗ - может бить сквозь что-то, ИЛИ сделаем честно? Сделаем честно: Радар тоже блокируется массивными объектами, но у него широкий сектор)
+            // Допустим, радар пробивает препятствия, но Ладар - нет. Оставим радар как было:
+            if (viewObserver.radarActive && dist <= viewObserver.radarRange) isVisible = true;
+            if (!isVisible && pastState.radarActive && dist <= entity.radarRange * 2) isVisible = true;
+
+            // 3. ЛАДАР (Строго требует Line of Sight)
+            if (!isVisible && viewObserver.ladarActive && hasLoS) {
+                if (isInLadarCone(viewObserver.renderX, viewObserver.renderY, entity.renderX, entity.renderY, viewObserver.ladarAzimuth)) {
+                    isVisible = true;
+                }
+            }
+            if (!isVisible && pastState.ladarActive && hasLoS) isVisible = true; // Ладар демаскирует на бесконечность, но только если нет преград!
+
+            // 4. ПАССИВНЫЕ ИЛС и ГРАВИТОМЕТР
+            if (pastState.gravSignature) renderer.drawBearing(viewObserver, entity, '#ff00aa', 'GRAV');
+            if (pastState.thermalSignature) renderer.drawBearing(viewObserver, entity, '#ffaa00', 'THERMAL');
         }
-        
-        // Рисуем сам объект
-        renderer.drawEntity(entity);
-        
-        // Подсветка выделенного объекта (используем renderX/renderY!)
-        if (entity === selectedEntity) {
-            const screenPos = renderer.toScreen(entity.renderX, entity.renderY);
-            renderer.ctx.beginPath();
-            renderer.ctx.arc(screenPos.x, screenPos.y, (entity.radius * renderer.zoom) + 10, 0, Math.PI * 2);
-            renderer.ctx.strokeStyle = '#ffaa00';
-            renderer.ctx.setLineDash([4, 4]);
-            renderer.ctx.stroke();
-            renderer.ctx.setLineDash([]);
+
+        // --- ОТРИСОВКА (если видим) ---
+        if (isVisible || !viewObserver) {
+            if (entity.parent) {
+                const renderA = entity.renderA !== undefined ? entity.renderA : entity.a;
+                const renderE = entity.renderE !== undefined ? entity.renderE : entity.e;
+                const renderOmega = entity.renderOmega !== undefined ? entity.renderOmega : entity.omega;
+                
+                const path = generateOrbitPath(renderA, renderE, renderOmega); 
+                const renderPath = path.map(p => ({
+                    x: p.x + entity.parent.renderX,
+                    y: p.y + entity.parent.renderY
+                }));
+                renderer.drawOrbit(renderPath);
+            }
+            
+            renderer.drawEntity(entity);
+            
+            if (entity === selectedEntity) {
+                const screenPos = renderer.toScreen(entity.renderX, entity.renderY);
+                renderer.ctx.beginPath();
+                renderer.ctx.arc(screenPos.x, screenPos.y, (entity.radius * renderer.zoom) + 10, 0, Math.PI * 2);
+                renderer.ctx.strokeStyle = '#ffaa00';
+                renderer.ctx.setLineDash([4, 4]);
+                renderer.ctx.stroke();
+                renderer.ctx.setLineDash([]);
+            }
         }
     });
 

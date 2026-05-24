@@ -2,21 +2,36 @@
 import { calculateTrueAnomaly, getPositionAtAnomaly, calculatePeriod, generateOrbitPath } from '../physics/Kepler.js';
 
 export class CelestialBody {
-    // ДОБАВИЛИ mu в конец (по умолчанию берем ту же константу, чтобы ничего не сломать)
     constructor(name, type, radius, parent = null, a = 0, e = 0, offset = 0, omega = 0, mu = 3947.84) {
         this.name = name;
         this.type = type;
         this.radius = radius;
-        this.mu = mu; // <--- Собственная сила притяжения этого тела
+        this.mu = mu;
         
         this.parent = parent;
         this.a = a;
         this.e = e;
         this.offset = offset;
         this.omega = omega;
-        
-        // Считаем период, основываясь на гравитации РОДИТЕЛЯ (вокруг кого летим)
         this.period = (a > 0 && parent) ? calculatePeriod(a, parent.mu) : 0;
+        
+        // НОВОЕ: Сфера влияния (SoI)
+        if (this.parent && this.a > 0) {
+            // Формула Сферы Влияния Лапласа: R * (m/M)^0.4
+            this.soi = this.a * Math.pow(this.mu / this.parent.mu, 0.4);
+        } else {
+            this.soi = Infinity; // У центральной звезды бесконечная сфера
+        }
+        
+        // --- НОВОЕ: Журнал орбит (Time = -Infinity означает "с начала времен") ---
+        this.orbitalHistory = [{
+            time: -Infinity,
+            a: this.a,
+            e: this.e,
+            omega: this.omega,
+            offset: this.offset,
+            period: this.period
+        }];
         
         this.children = [];
         if (this.parent) this.parent.children.push(this);
@@ -25,9 +40,47 @@ export class CelestialBody {
         this.y = 0;
         this.lastX = 0;
         this.lastY = 0;
+
+        // Координаты и параметры орбиты для видимого прошлого
+        this.renderX = 0;
+        this.renderY = 0;
+        this.renderA = this.a;
+        this.renderE = this.e;
+        this.renderOmega = this.omega;
     }
 
-    updatePosition(time) {
+    /**
+     * НОВОЕ: Находит параметры орбиты, актуальные для заданного времени в прошлом
+     */
+    getHistoricalState(time) {
+        // Идем с конца массива к началу, ищем ближайшее прошлое
+        for (let i = this.orbitalHistory.length - 1; i >= 0; i--) {
+            if (time >= this.orbitalHistory[i].time) {
+                return this.orbitalHistory[i];
+            }
+        }
+        return this.orbitalHistory[0];
+    }
+
+    getAbsoluteVelocityAtTime(time) {
+        if (!this.parent || this.a === 0) return { vx: 0, vy: 0 };
+        
+        const state = this.getHistoricalState(time);
+        if (state.a === 0) return this.parent.getAbsoluteVelocityAtTime(time);
+
+        const anomaly = calculateTrueAnomaly(time, state.period, state.e, state.offset);
+        // Скорость относительно родителя
+        const localVel = getVelocityAtAnomaly(state.a, state.e, anomaly, state.omega, this.parent.mu);
+        // Скорость самого родителя
+        const parentVel = this.parent.getAbsoluteVelocityAtTime(time);
+        
+        return {
+            vx: localVel.vx + parentVel.vx,
+            vy: localVel.vy + parentVel.vy
+        };
+    }
+
+    updatePosition(time, systemEntities = []) {
         this.lastX = this.x;
         this.lastY = this.y;
 
@@ -35,27 +88,28 @@ export class CelestialBody {
             this.x = 0;
             this.y = 0;
         } else {
-            // Передаем гравитацию родителя
             const anomaly = calculateTrueAnomaly(time, this.period, this.e, this.offset);
             const localPos = getPositionAtAnomaly(this.a, this.e, anomaly, this.omega);
-            
             this.x = this.parent.x + localPos.x;
             this.y = this.parent.y + localPos.y;
         }
 
         for (const child of this.children) {
-            child.updatePosition(time);
+            child.updatePosition(time, systemEntities);
         }
     }
 
     getAbsolutePositionAtTime(time) {
-        if (!this.parent || this.a === 0) {
-            return { x: 0, y: 0 };
-        }
+        if (!this.parent) return { x: 0, y: 0 };
         
+        // НОВОЕ: Берем параметры орбиты из нужной эпохи!
+        const state = this.getHistoricalState(time);
+        
+        if (state.a === 0) return this.parent.getAbsolutePositionAtTime(time);
+
         const parentPos = this.parent.getAbsolutePositionAtTime(time);
-        const anomaly = calculateTrueAnomaly(time, this.period, this.e, this.offset);
-        const localPos = getPositionAtAnomaly(this.a, this.e, anomaly, this.omega);
+        const anomaly = calculateTrueAnomaly(time, state.period, state.e, state.offset);
+        const localPos = getPositionAtAnomaly(state.a, state.e, anomaly, state.omega);
         
         return {
             x: parentPos.x + localPos.x,
@@ -65,11 +119,14 @@ export class CelestialBody {
 
     updateRenderPosition(observer, currentTime, cSpeed) {
         if (!observer || observer === this) {
-            // В режиме бога или для самого себя задержки нет
+            // В Режиме Бога мы видим настоящее
             this.renderX = this.x;
             this.renderY = this.y;
+            this.renderA = this.a;
+            this.renderE = this.e;
+            this.renderOmega = this.omega;
         } else {
-            // Итеративное вычисление задержки света (3 итерации дают точность 99.9%)
+            // Рассчитываем задержку света
             let tPast = currentTime;
             for (let i = 0; i < 3; i++) {
                 const pastPos = this.getAbsolutePositionAtTime(tPast);
@@ -77,17 +134,23 @@ export class CelestialBody {
                 tPast = currentTime - (distance / cSpeed);
             }
             
-            // Получаем финальные координаты из прошлого
+            // Фиксируем координаты из прошлого
             const finalPos = this.getAbsolutePositionAtTime(tPast);
             this.renderX = finalPos.x;
             this.renderY = finalPos.y;
+            
+            // НОВОЕ: Фиксируем ФОРМУ ОРБИТЫ, какой она была в прошлом!
+            const pastState = this.getHistoricalState(tPast);
+            this.renderA = pastState.a;
+            this.renderE = pastState.e;
+            this.renderOmega = pastState.omega;
         }
 
-        // Обновляем детей (луны, станции)
         for (const child of this.children) {
             child.updateRenderPosition(observer, currentTime, cSpeed);
         }
     }
+
     getAbsoluteOrbitPath() {
         if (!this.parent || this.a === 0) return [];
         const localPath = generateOrbitPath(this.a, this.e, this.omega);

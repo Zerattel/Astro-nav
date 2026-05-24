@@ -5,11 +5,14 @@ export class Renderer {
         this.canvas = document.getElementById(canvasId);
         this.ctx = this.canvas.getContext('2d');
         
+        // НОВОЕ: Виртуальный холст для идеальной работы со светом и тенями
+        this.maskCanvas = document.createElement('canvas');
+        this.maskCtx = this.maskCanvas.getContext('2d');
+        
         this.offsetX = 0;
         this.offsetY = 0;
         this.zoom = 1;
 
-        // Переменные для перетаскивания (Pan)
         this.isDragging = false;
         this.lastMouseX = 0;
         this.lastMouseY = 0;
@@ -20,12 +23,14 @@ export class Renderer {
     }
 
     resize() {
-        // Подгоняем canvas под размер родительского контейнера
         const rect = this.canvas.parentElement.getBoundingClientRect();
         this.canvas.width = rect.width;
         this.canvas.height = rect.height;
         
-        // Центрируем камеру
+        // Виртуальный холст всегда должен совпадать по размеру с основным
+        this.maskCanvas.width = rect.width;
+        this.maskCanvas.height = rect.height;
+        
         this.offsetX = this.canvas.width / 2;
         this.offsetY = this.canvas.height / 2;
     }
@@ -34,7 +39,6 @@ export class Renderer {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
 
-    // Перевод мировых координат в координаты экрана
     toScreen(x, y) {
         return {
             x: x * this.zoom + this.offsetX,
@@ -44,29 +48,24 @@ export class Renderer {
 
     drawStar(x, y, radius) {
         const screenPos = this.toScreen(x, y);
-        
         this.ctx.beginPath();
         this.ctx.arc(screenPos.x, screenPos.y, radius * this.zoom, 0, Math.PI * 2);
         this.ctx.fillStyle = '#ffffff';
         this.ctx.fill();
-        
-        // Свечение (опционально для красоты)
         this.ctx.shadowBlur = 20;
         this.ctx.shadowColor = '#ffffff';
         this.ctx.fill();
-        this.ctx.shadowBlur = 0; // отключаем, чтобы не светилось всё остальное
+        this.ctx.shadowBlur = 0; 
     }
 
     drawPlanet(x, y, radius) {
         const screenPos = this.toScreen(x, y);
-        
         this.ctx.beginPath();
-        this.ctx.arc(screenPos.x, screenPos.y, Math.max(radius * this.zoom, 2), 0, Math.PI * 2); // Минимальный радиус 2px
+        this.ctx.arc(screenPos.x, screenPos.y, Math.max(radius * this.zoom, 2), 0, Math.PI * 2);
         this.ctx.strokeStyle = '#ffffff';
         this.ctx.lineWidth = 2;
         this.ctx.stroke();
         
-        // Перекрестие внутри планеты для "технического" вида
         this.ctx.beginPath();
         this.ctx.moveTo(screenPos.x - radius * this.zoom - 2, screenPos.y);
         this.ctx.lineTo(screenPos.x + radius * this.zoom + 2, screenPos.y);
@@ -94,26 +93,23 @@ export class Renderer {
 
     setupCameraControls() {
         this.canvas.addEventListener('wheel', (e) => {
-            e.preventDefault(); // Останавливаем прокрутку страницы
+            e.preventDefault(); 
             const mouseX = e.clientX - this.canvas.getBoundingClientRect().left;
             const mouseY = e.clientY - this.canvas.getBoundingClientRect().top;
 
-            // Вычисляем, где мышка была в координатах мира до зума
             const worldX = (mouseX - this.offsetX) / this.zoom;
             const worldY = (mouseY - this.offsetY) / this.zoom;
 
             const zoomAmount = e.deltaY > 0 ? 0.9 : 1.1;
-            this.zoom = Math.max(0.05, Math.min(this.zoom, 10)); // Расширен лимит зума
+            this.zoom = Math.max(0.05, Math.min(this.zoom, 10)); 
             this.zoom *= zoomAmount;
 
-            // Корректируем смещение, чтобы зум происходил в точку под мышкой
             this.offsetX = mouseX - worldX * this.zoom;
             this.offsetY = mouseY - worldY * this.zoom;
         });
 
-        // Перетаскивание карты (Pan)
         this.canvas.addEventListener('mousedown', (e) => {
-            if (e.button === 0 || e.button === 1) { // Левая или средняя кнопка
+            if (e.button === 0 || e.button === 1) { 
                 this.isDragging = true;
                 this.lastMouseX = e.clientX;
                 this.lastMouseY = e.clientY;
@@ -123,7 +119,7 @@ export class Renderer {
 
         window.addEventListener('mouseup', () => {
             this.isDragging = false;
-            this.canvas.style.cursor = 'crosshair'; // Возвращаем прицел
+            this.canvas.style.cursor = 'crosshair'; 
         });
 
         window.addEventListener('mousemove', (e) => {
@@ -141,7 +137,6 @@ export class Renderer {
     drawPredictedPath(prediction, offsetX = 0, offsetY = 0) {
         if (!prediction || prediction.path.length === 0) return;
 
-        // Рисуем синюю траекторию (Остается без изменений)
         this.ctx.beginPath();
         const start = this.toScreen(prediction.path[0].x + offsetX, prediction.path[0].y + offsetY);
         this.ctx.moveTo(start.x, start.y);
@@ -183,7 +178,7 @@ export class Renderer {
     drawSensorZones(entity, systemEntities = []) {
         const screenPos = this.toScreen(entity.renderX, entity.renderY);
 
-        // 1. МАГНИТОМЕТР (Рисуется ДО маски, так как бьет сквозь планеты)
+        // 1. МАГНИТОМЕТР (Рисуется на главном холсте ДО теней, он прошибает планеты)
         if (entity.magActive) {
             this.ctx.beginPath();
             this.ctx.arc(screenPos.x, screenPos.y, entity.magRange * this.zoom, 0, Math.PI * 2);
@@ -193,14 +188,57 @@ export class Renderer {
             this.ctx.stroke();
         }
 
-        // --- НАЧАЛО МАСКИРОВАНИЯ ---
-        this.ctx.save();
-        this.ctx.beginPath();
+        // --- РЕНДЕР СЕНСОРОВ ЧЕРЕЗ МАСКУ ---
+        
+        // Очищаем виртуальный холст
+        this.maskCtx.clearRect(0, 0, this.maskCanvas.width, this.maskCanvas.height);
 
-        // Создаем огромный холст, на котором МОЖНО рисовать
-        this.ctx.rect(0, 0, this.canvas.width, this.canvas.height);
+        // 2. РАДАР (Рисуем на виртуальном холсте)
+        if (entity.radarActive) {
+            this.maskCtx.beginPath();
+            this.maskCtx.arc(screenPos.x, screenPos.y, entity.radarRange * this.zoom, 0, Math.PI * 2);
+            this.maskCtx.fillStyle = 'rgba(0, 255, 204, 0.05)';
+            this.maskCtx.fill();
+            this.maskCtx.strokeStyle = 'rgba(0, 255, 204, 0.3)';
+            this.maskCtx.setLineDash([2, 4]);
+            this.maskCtx.stroke();
 
-        // "Вырезаем" из него тени планет
+            this.maskCtx.beginPath();
+            this.maskCtx.arc(screenPos.x, screenPos.y, (entity.radarRange * 2) * this.zoom, 0, Math.PI * 2);
+            this.maskCtx.strokeStyle = 'rgba(255, 0, 68, 0.2)';
+            this.maskCtx.setLineDash([10, 10]);
+            this.maskCtx.stroke();
+            this.maskCtx.setLineDash([]);
+        }
+
+        // 3. ЛАДАР (Рисуем на виртуальном холсте)
+        if (entity.ladarActive) {
+            const azRad = (entity.ladarAzimuth - 90) * (Math.PI / 180);
+            const beamLengthScreen = 2000 * this.zoom;
+            const beamWidth = 0.05;
+
+            this.maskCtx.beginPath();
+            this.maskCtx.moveTo(screenPos.x, screenPos.y);
+            this.maskCtx.lineTo(
+                screenPos.x + Math.cos(azRad - beamWidth) * beamLengthScreen,
+                screenPos.y + Math.sin(azRad - beamWidth) * beamLengthScreen
+            );
+            this.maskCtx.lineTo(
+                screenPos.x + Math.cos(azRad + beamWidth) * beamLengthScreen,
+                screenPos.y + Math.sin(azRad + beamWidth) * beamLengthScreen
+            );
+            this.maskCtx.closePath();
+
+            this.maskCtx.fillStyle = 'rgba(255, 50, 50, 0.15)';
+            this.maskCtx.fill();
+            this.maskCtx.strokeStyle = 'rgba(255, 50, 50, 0.8)';
+            this.maskCtx.stroke();
+        }
+
+        // 4. ЛАСТИК ТЕНЕЙ: Всё, что мы нарисуем сейчас, СТОТРЕТ радар и ладар
+        this.maskCtx.globalCompositeOperation = 'destination-out';
+        this.maskCtx.fillStyle = 'rgba(0,0,0,1)'; // Цвет не важен, он работает как стерка
+
         systemEntities.forEach(body => {
             if (body.type === 'ship' || body.type === 'station' || body === entity) return;
 
@@ -208,9 +246,8 @@ export class Renderer {
             const dy = body.renderY - entity.renderY;
             const dist = Math.hypot(dx, dy);
 
-            if (dist <= body.radius) return;
+            if (dist <= body.radius) return; 
 
-            // Расчет касательных (как в drawLOSShadows)
             const angleToBody = Math.atan2(dy, dx);
             const theta = Math.asin(body.radius / dist);
             const tangentDist = Math.sqrt(dist * dist - body.radius * body.radius);
@@ -230,118 +267,65 @@ export class Renderer {
             const screenT2 = this.toScreen(t2_x, t2_y);
             const screenP1 = this.toScreen(p1_x, p1_y);
             const screenP2 = this.toScreen(p2_x, p2_y);
-
-            // Дуга по передней (освещенной) части планеты
-            const angleToSensor = Math.atan2(entity.renderY - body.renderY, entity.renderX - body.renderX);
-            const startArc = angleToSensor - (Math.PI / 2 - theta);
-            const endArc = angleToSensor + (Math.PI / 2 - theta);
             const screenBody = this.toScreen(body.renderX, body.renderY);
 
-            // Формируем контур "слепой зоны"
-            this.ctx.moveTo(screenP2.x, screenP2.y);
-            this.ctx.lineTo(screenT2.x, screenT2.y);
-            this.ctx.arc(screenBody.x, screenBody.y, body.radius * this.zoom, startArc, endArc, false);
-            this.ctx.lineTo(screenP1.x, screenP1.y);
-            this.ctx.closePath();
+            // Стираем конус тени за планетой
+            this.maskCtx.beginPath();
+            this.maskCtx.moveTo(screenT1.x, screenT1.y);
+            this.maskCtx.lineTo(screenP1.x, screenP1.y);
+            this.maskCtx.lineTo(screenP2.x, screenP2.y);
+            this.maskCtx.lineTo(screenT2.x, screenT2.y);
+            this.maskCtx.lineTo(screenBody.x, screenBody.y); // Центр планеты
+            this.maskCtx.closePath();
+            this.maskCtx.fill();
+
+            // Дополнительно стираем саму планету (круг), чтобы луч обрывался идеально по передней кромке!
+            this.maskCtx.beginPath();
+            this.maskCtx.arc(screenBody.x, screenBody.y, body.radius * this.zoom, 0, Math.PI * 2);
+            this.maskCtx.fill();
         });
 
-        // ПРИМЕНЯЕМ МАСКУ (evenodd вырезает внутренние пересекающиеся контуры)
-        this.ctx.clip('evenodd');
+        // Возвращаем режим в норму
+        this.maskCtx.globalCompositeOperation = 'source-over';
 
-        // 2. РАДАР (Теперь рисуется ТОЛЬКО там, где нет теней)
-        if (entity.radarActive) {
-            // Зеленая зона обнаружения
-            this.ctx.beginPath();
-            this.ctx.arc(screenPos.x, screenPos.y, entity.radarRange * this.zoom, 0, Math.PI * 2);
-            this.ctx.fillStyle = 'rgba(0, 255, 204, 0.05)';
-            this.ctx.fill();
-            this.ctx.strokeStyle = 'rgba(0, 255, 204, 0.3)';
-            this.ctx.setLineDash([2, 4]);
-            this.ctx.stroke();
-
-            // Красная зона демаскировки
-            this.ctx.beginPath();
-            this.ctx.arc(screenPos.x, screenPos.y, (entity.radarRange * 2) * this.zoom, 0, Math.PI * 2);
-            this.ctx.strokeStyle = 'rgba(255, 0, 68, 0.2)';
-            this.ctx.setLineDash([10, 10]);
-            this.ctx.stroke();
-            this.ctx.setLineDash([]);
-        }
-
-        // 3. ЛАДАР (Просто рисуем длинный луч, маска сама обрежет его об планету)
-        if (entity.ladarActive) {
-            const azRad = (entity.ladarAzimuth - 90) * (Math.PI / 180);
-            const beamLengthScreen = 2000 * this.zoom; 
-            const beamWidth = 0.05;
-
-            this.ctx.beginPath();
-            this.ctx.moveTo(screenPos.x, screenPos.y);
-            this.ctx.lineTo(
-                screenPos.x + Math.cos(azRad - beamWidth) * beamLengthScreen,
-                screenPos.y + Math.sin(azRad - beamWidth) * beamLengthScreen
-            );
-            this.ctx.lineTo(
-                screenPos.x + Math.cos(azRad + beamWidth) * beamLengthScreen,
-                screenPos.y + Math.sin(azRad + beamWidth) * beamLengthScreen
-            );
-            this.ctx.closePath();
-
-            this.ctx.fillStyle = 'rgba(255, 50, 50, 0.15)';
-            this.ctx.fill();
-            this.ctx.strokeStyle = 'rgba(255, 50, 50, 0.8)';
-            this.ctx.stroke();
-        }
-
-        // --- СНИМАЕМ МАСКУ ---
-        this.ctx.restore();
+        // 5. Переносим обрезанный результат на основной экран
+        this.ctx.drawImage(this.maskCanvas, 0, 0);
     }
 
-    // НОВОЕ: Отрисовка динамических теней слепых зон
     drawLOSShadows(observer, systemEntities) {
         if (!observer) return;
 
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; // Густая тень (слепая зона)
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; 
         
         systemEntities.forEach(body => {
-            // Тени отбрасывают только крупные небесные тела
             if (body.type === 'ship' || body.type === 'station' || body === observer) return;
 
             const dx = body.renderX - observer.renderX;
             const dy = body.renderY - observer.renderY;
             const dist = Math.hypot(dx, dy);
 
-            if (dist <= body.radius) return; // Если мы внутри, тени нет
+            if (dist <= body.radius) return; 
 
-            // Угол на планету
             const angleToBody = Math.atan2(dy, dx);
-            // Угол отклонения касательных линий (размер планеты с нашей точки зрения)
             const theta = Math.asin(body.radius / dist);
-
-            // Дистанция от нас до точек касания на краях планеты
             const tangentDist = Math.sqrt(dist * dist - body.radius * body.radius);
 
-            // Вычисляем координаты левой и правой точек касания (в мире)
             const t1_x = observer.renderX + tangentDist * Math.cos(angleToBody - theta);
             const t1_y = observer.renderY + tangentDist * Math.sin(angleToBody - theta);
-            
             const t2_x = observer.renderX + tangentDist * Math.cos(angleToBody + theta);
             const t2_y = observer.renderY + tangentDist * Math.sin(angleToBody + theta);
 
-            // Продлеваем эти линии далеко в космос (создаем конус тени)
             const shadowLength = 5000;
             const p1_x = t1_x + shadowLength * Math.cos(angleToBody - theta);
             const p1_y = t1_y + shadowLength * Math.sin(angleToBody - theta);
-            
             const p2_x = t2_x + shadowLength * Math.cos(angleToBody + theta);
             const p2_y = t2_y + shadowLength * Math.sin(angleToBody + theta);
 
-            // Переводим в экранные координаты
             const screenT1 = this.toScreen(t1_x, t1_y);
             const screenT2 = this.toScreen(t2_x, t2_y);
             const screenP1 = this.toScreen(p1_x, p1_y);
             const screenP2 = this.toScreen(p2_x, p2_y);
 
-            // Рисуем полигон тени
             this.ctx.beginPath();
             this.ctx.moveTo(screenT1.x, screenT1.y);
             this.ctx.lineTo(screenP1.x, screenP1.y);
@@ -357,12 +341,10 @@ export class Renderer {
         const start = this.toScreen(fromEntity.renderX, fromEntity.renderY);
         const target = this.toScreen(toEntity.renderX, toEntity.renderY);
         
-        // Рисуем вектор от наблюдателя в сторону цели
         const dx = target.x - start.x;
         const dy = target.y - start.y;
         const angle = Math.atan2(dy, dx);
         
-        // Линия не идет до самого конца, это просто пеленг (указатель направления)
         const length = 100; 
         const endX = start.x + Math.cos(angle) * length;
         const endY = start.y + Math.sin(angle) * length;
@@ -378,6 +360,7 @@ export class Renderer {
         this.ctx.fillStyle = color;
         this.ctx.fillText(`[${label} BEARING]`, endX + 5, endY + 5);
     }
+    
     drawEntity(entity) {
         const screenPos = this.toScreen(entity.renderX, entity.renderY);
         const r = Math.max(entity.radius * this.zoom, 2);
@@ -397,7 +380,7 @@ export class Renderer {
                 this.ctx.arc(screenPos.x, screenPos.y, r, 0, Math.PI * 2);
                 this.ctx.lineWidth = entity.type === 'moon' ? 1 : 2;
                 this.ctx.stroke();
-                // Перекрестие
+                
                 this.ctx.moveTo(screenPos.x - r - 2, screenPos.y);
                 this.ctx.lineTo(screenPos.x + r + 2, screenPos.y);
                 this.ctx.moveTo(screenPos.x, screenPos.y - r - 2);
@@ -407,7 +390,7 @@ export class Renderer {
                 if (entity.soi !== Infinity) {
                     this.ctx.beginPath();
                     this.ctx.arc(screenPos.x, screenPos.y, entity.soi * this.zoom, 0, Math.PI * 2);
-                    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)'; // Очень тусклый белый
+                    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)'; 
                     this.ctx.lineWidth = 1;
                     this.ctx.setLineDash([5, 10]);
                     this.ctx.stroke();
@@ -416,25 +399,21 @@ export class Renderer {
                 break;
 
             case 'station':
-                // Рисуем квадрат
                 this.ctx.rect(screenPos.x - r, screenPos.y - r, r * 2, r * 2);
                 this.ctx.lineWidth = 1;
                 this.ctx.stroke();
-                // Точка в центре
                 this.ctx.fillRect(screenPos.x - 1, screenPos.y - 1, 2, 2);
                 break;
             case 'ship':
                 this.ctx.save();
                 this.ctx.translate(screenPos.x, screenPos.y);
-                // Поворачиваем холст по направлению движения корабля
                 this.ctx.rotate(entity.heading); 
                 
-                // Рисуем футуристичный треугольный маркер (шеврон)
                 this.ctx.beginPath();
-                this.ctx.moveTo(r * 2, 0); // Нос
-                this.ctx.lineTo(-r, r);    // Левое крыло
-                this.ctx.lineTo(-r/2, 0);  // Выемка сзади
-                this.ctx.lineTo(-r, -r);   // Правое крыло
+                this.ctx.moveTo(r * 2, 0); 
+                this.ctx.lineTo(-r, r);    
+                this.ctx.lineTo(-r/2, 0);  
+                this.ctx.lineTo(-r, -r);   
                 this.ctx.closePath();
                 
                 this.ctx.fillStyle = '#ffffff';
@@ -443,13 +422,13 @@ export class Renderer {
                 break;
         }
 
-        // Имя объекта рядом с ним (показываем только если масштаб позволяет или это звезда/планета)
         if (this.zoom > 0.5 || entity.type === 'star' || entity.type === 'planet') {
             this.ctx.font = '10px Courier New';
             this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
             this.ctx.fillText(entity.name, screenPos.x + r + 5, screenPos.y - r - 5);
         }
     }
+    
     toWorld(screenX, screenY) {
         return {
             x: (screenX - this.offsetX) / this.zoom,

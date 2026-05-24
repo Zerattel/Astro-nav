@@ -41,6 +41,7 @@ export class Ship extends CelestialBody {
         this.orbitalHistory.push({
             time: exactTime,
             a: this.a, e: this.e, omega: this.omega, offset: this.offset, period: this.period,
+            direction: this.direction,
             radarActive: this.radarActive,
             magActive: this.magActive,
             ladarActive: this.ladarActive,
@@ -67,10 +68,8 @@ export class Ship extends CelestialBody {
     }
 
     planManeuver(courseDegree, deltaV, executionTime) {
-        this.maneuverNodes.push({ courseDegree, deltaV, executionTime });
-        this.maneuverNodes.sort((a, b) => a.executionTime - b.executionTime);
+        this.maneuverNodes = [{ courseDegree, deltaV, executionTime }];
     }
-
     updatePosition(time, systemEntities = []) {
         while (this.maneuverNodes.length > 0 && time >= this.maneuverNodes[0].executionTime) {
             const node = this.maneuverNodes.shift();
@@ -93,9 +92,9 @@ export class Ship extends CelestialBody {
         if (!this.parent) return { success: false, reason: "No parent body" };
 
         const parentMu = this.parent.mu; 
-        const anomaly = calculateTrueAnomaly(exactTime, this.period, this.e, this.offset);
+        const anomaly = calculateTrueAnomaly(exactTime, this.period, this.e, this.offset, this.direction);
+        const vel = getVelocityAtAnomaly(this.a, this.e, anomaly, this.omega, parentMu, this.direction);
         const pos = getPositionAtAnomaly(this.a, this.e, anomaly, this.omega);
-        const vel = getVelocityAtAnomaly(this.a, this.e, anomaly, this.omega, parentMu);
         
         const courseRad = (courseDegree - 90) * (Math.PI / 180);
         vel.vx += deltaV * Math.cos(courseRad);
@@ -103,15 +102,13 @@ export class Ship extends CelestialBody {
         
         const newOrbit = cartesianToKepler(pos.x, pos.y, vel.vx, vel.vy, exactTime, parentMu);
         
-        if (newOrbit.error) return { success: false, reason: "Burn exceeds escape velocity." };
-        
         this.a = newOrbit.a;
         this.e = newOrbit.e;
         this.omega = newOrbit.omega;
         this.offset = newOrbit.offset;
         this.period = newOrbit.period;
+        this.direction = newOrbit.direction; 
         
-        // Используем новую функцию вместо дублирования кода
         this.commitStateToHistory(exactTime);
         return { success: true };
     }
@@ -120,27 +117,28 @@ export class Ship extends CelestialBody {
         let targetParent = null;
         let minSoI = Infinity;
 
-        // 1. Проверяем, не влетели ли мы в SoI другого тела
+        // 1. Проверяем ВХОД в чужую SoI
         for (const body of systemEntities) {
-            if (body.type === 'ship' || body === this) continue;
+            // Нельзя войти в себя, в другие корабли или в своего текущего родителя
+            if (body.type === 'ship' || body === this || body === this.parent) continue;
 
             const dist = Math.hypot(this.x - body.x, this.y - body.y);
-            // Если мы внутри чужой сферы, и она меньше нашей текущей (ищем самую глубокую)
-            if (dist < body.soi && body.soi < minSoI) {
+            // Гистерезис 0.99: входим, когда пересекли границу чуть вглубь
+            if (dist < body.soi * 0.99 && body.soi < minSoI) {
                 minSoI = body.soi;
                 targetParent = body;
             }
         }
 
-        // 2. Если мы вылетели за пределы SoI своего текущего родителя
-        if (this.parent && this.parent.parent) {
+        // 2. Проверяем ВЫХОД из текущей SoI
+        if (!targetParent && this.parent && this.parent.parent) {
             const distToParent = Math.hypot(this.x - this.parent.x, this.y - this.parent.y);
-            if (distToParent > this.parent.soi) {
-                targetParent = this.parent.parent; // Падаем обратно на орбиту дедушки (звезды/планеты)
+            // Гистерезис 1.01: вылетаем, когда чуть-чуть отдалились за границу
+            if (distToParent > this.parent.soi * 1.01) {
+                targetParent = this.parent.parent;
             }
         }
 
-        // Если родитель сменился - производим перерасчет!
         if (targetParent && targetParent !== this.parent) {
             this.transitionToParent(targetParent, time);
         }
@@ -148,37 +146,120 @@ export class Ship extends CelestialBody {
 
     transitionToParent(newParent, time) {
         console.log(`[NAV SYS]: ${this.name} SoI Transition: ${this.parent.name} -> ${newParent.name}`);
-
-        // 1. Получаем абсолютные координаты и скорости нас и нового родителя
         const myAbsPos = this.getAbsolutePositionAtTime(time);
         const myAbsVel = this.getAbsoluteVelocityAtTime(time);
-        
         const parentAbsPos = newParent.getAbsolutePositionAtTime(time);
         const parentAbsVel = newParent.getAbsoluteVelocityAtTime(time);
 
-        // 2. Вычисляем относительные векторы
         const relX = myAbsPos.x - parentAbsPos.x;
         const relY = myAbsPos.y - parentAbsPos.y;
         const relVx = myAbsVel.vx - parentAbsVel.vx;
         const relVy = myAbsVel.vy - parentAbsVel.vy;
 
-        // 3. Конвертируем обратно в Кеплеровские орбиты с гравитацией нового родителя
         const newOrbit = cartesianToKepler(relX, relY, relVx, relVy, time, newParent.mu);
 
-        this.a = newOrbit.a;
-        this.e = newOrbit.e;
-        this.omega = newOrbit.omega;
-        this.offset = newOrbit.offset;
-        this.period = newOrbit.period;
+        this.a = newOrbit.a; this.e = newOrbit.e; this.omega = newOrbit.omega; 
+        this.offset = newOrbit.offset; this.period = newOrbit.period;
+        
+        // Перехватываем новое направление!
+        this.direction = newOrbit.direction; 
 
-        // 4. Переносим себя в дереве иерархии
         const oldIndex = this.parent.children.indexOf(this);
         if (oldIndex > -1) this.parent.children.splice(oldIndex, 1);
-        
         this.parent = newParent;
         this.parent.children.push(this);
 
-        // 5. Записываем смену орбиты в Историю (чтобы задержка света работала идеально!)
         this.commitStateToHistory(time);
     }
+
+    getPredictedPath(systemEntities, currentTime) {
+        let node;
+        let hasNode = false;
+        
+        if (this.maneuverNodes.length > 0) {
+            node = this.maneuverNodes[0];
+            hasNode = true;
+        } else {
+            // Если маневра нет, создаем "пустышку" прямо сейчас с нулевым импульсом
+            node = { executionTime: currentTime, courseDegree: 0, deltaV: 0 };
+        }
+        
+        let t = node.executionTime;
+        let dummyParent = this.parent;
+        
+        const anomaly = calculateTrueAnomaly(t, this.period, this.e, this.offset, this.direction);
+        const pos = getPositionAtAnomaly(this.a, this.e, anomaly, this.omega);
+        const vel = getVelocityAtAnomaly(this.a, this.e, anomaly, this.omega, dummyParent.mu, this.direction);
+        
+        const courseRad = (node.courseDegree - 90) * (Math.PI / 180);
+        vel.vx += node.deltaV * Math.cos(courseRad);
+        vel.vy += node.deltaV * Math.sin(courseRad);
+        
+        let orbit = cartesianToKepler(pos.x, pos.y, vel.vx, vel.vy, t, dummyParent.mu);
+        const path = [];
+        const maxSteps = 400; 
+        
+        const parentStartPos = dummyParent.getAbsolutePositionAtTime(t);
+        const nodeAbsPos = { x: parentStartPos.x + pos.x, y: parentStartPos.y + pos.y };
+
+        for (let i = 0; i < maxSteps; i++) {
+            let dt = 1;
+            if (dummyParent.soi < 100) dt = 0.5; 
+            else if (orbit.e < 1) dt = Math.max(0.5, orbit.period / maxSteps); 
+            else dt = 5; 
+
+            t += dt;
+            
+            const parentAbsPos = dummyParent.getAbsolutePositionAtTime(t);
+            const parentAbsVel = dummyParent.getAbsoluteVelocityAtTime(t);
+            
+            const currentAnomaly = calculateTrueAnomaly(t, orbit.period, orbit.e, orbit.offset, orbit.direction);
+            const localPos = getPositionAtAnomaly(orbit.a, orbit.e, currentAnomaly, orbit.omega);
+            const absPos = { x: parentAbsPos.x + localPos.x, y: parentAbsPos.y + localPos.y };
+            
+            path.push({ x: absPos.x, y: absPos.y, parentName: dummyParent.name });
+            
+            let newParent = null;
+            let minSoI = Infinity;
+            
+            for (const body of systemEntities) {
+                if (body.type === 'ship' || body === dummyParent) continue;
+                const bodyAbsPos = body.getAbsolutePositionAtTime(t);
+                const dist = Math.hypot(absPos.x - bodyAbsPos.x, absPos.y - bodyAbsPos.y);
+                if (dist < body.soi * 0.99 && body.soi < minSoI) {
+                    minSoI = body.soi;
+                    newParent = body;
+                }
+            }
+            
+            if (!newParent && dummyParent.parent) {
+                const distToParent = Math.hypot(absPos.x - parentAbsPos.x, absPos.y - parentAbsPos.y);
+                if (distToParent > dummyParent.soi * 1.01) {
+                    newParent = dummyParent.parent;
+                }
+            }
+            
+            if (newParent) {
+                const localVel = getVelocityAtAnomaly(orbit.a, orbit.e, currentAnomaly, orbit.omega, dummyParent.mu, orbit.direction);
+                const absVel = { vx: parentAbsVel.vx + localVel.vx, vy: parentAbsVel.vy + localVel.vy };
+                
+                const newParentAbsPos = newParent.getAbsolutePositionAtTime(t);
+                const newParentAbsVel = newParent.getAbsoluteVelocityAtTime(t);
+                
+                const relX = absPos.x - newParentAbsPos.x;
+                const relY = absPos.y - newParentAbsPos.y;
+                const relVx = absVel.vx - newParentAbsVel.vx;
+                const relVy = absVel.vy - newParentAbsVel.vy;
+                
+                orbit = cartesianToKepler(relX, relY, relVx, relVy, t, newParent.mu);
+                dummyParent = newParent;
+                
+                path.push({ x: absPos.x, y: absPos.y, transition: newParent.name });
+            }
+        }
+        
+        // Возвращаем флаг hasNode, чтобы знать, рисовать ли желтый прицел
+        return { nodeAbsPos, path, hasNode }; 
+    }
+
 }

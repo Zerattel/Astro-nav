@@ -56,7 +56,10 @@
                             <label>COURSE (0-360°): <input type="number" id="inp-course" class="ui-input" value="0"></label>
                             <label>DELTA-V: <input type="number" id="inp-dv" class="ui-input" value="2"></label>
                             <label title="Ожидание перед маневром в секундах симуляции">DELAY (s): <input type="number" id="inp-delay" class="ui-input" value="0"></label>
-                            <button id="btn-burn" class="btn" style="border-color: #ffaa00; color: #ffaa00;">UPLOAD NODE</button>
+                                <label style="color: #00aaff; cursor: pointer; font-size: 10px; margin-top: 5px;">
+                                    <input type="checkbox" id="chk-predict" checked> NAV-COMPUTER PREDICTIONS (PERK)
+                                </label>
+                    <button id="btn-burn" class="btn" style="border-color: #ffaa00; color: #ffaa00; margin-top: 5px;">UPLOAD NODE</button>
                         </div>
                     </div>
                     <div id="sensors-ui" style="display: none; margin-top: 15px; border-top: 1px solid var(--accent-dim); padding-top: 10px;">

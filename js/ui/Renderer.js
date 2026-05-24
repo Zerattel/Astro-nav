@@ -76,23 +76,20 @@ export class Renderer {
         this.ctx.stroke();
     }
 
-    drawOrbit(path) {
+    drawOrbit(path, color = 'rgba(255, 255, 255, 0.2)', isDashed = true) {
         if (path.length === 0) return;
-
         this.ctx.beginPath();
         const start = this.toScreen(path[0].x, path[0].y);
         this.ctx.moveTo(start.x, start.y);
-
         for (let i = 1; i < path.length; i++) {
             const point = this.toScreen(path[i].x, path[i].y);
             this.ctx.lineTo(point.x, point.y);
         }
-
-        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)'; // Полупрозрачный белый
+        this.ctx.strokeStyle = color;
         this.ctx.lineWidth = 1;
-        this.ctx.setLineDash([5, 5]); // Пунктирная линия
+        if (isDashed) this.ctx.setLineDash([5, 5]);
         this.ctx.stroke();
-        this.ctx.setLineDash([]); // Возвращаем сплошную линию для других объектов
+        this.ctx.setLineDash([]);
     }
 
     setupCameraControls() {
@@ -139,6 +136,48 @@ export class Renderer {
                 this.lastMouseY = e.clientY;
             }
         });
+    }
+
+    drawPredictedPath(prediction, offsetX = 0, offsetY = 0) {
+        if (!prediction || prediction.path.length === 0) return;
+
+        // Рисуем синюю траекторию (Остается без изменений)
+        this.ctx.beginPath();
+        const start = this.toScreen(prediction.path[0].x + offsetX, prediction.path[0].y + offsetY);
+        this.ctx.moveTo(start.x, start.y);
+        for (let i = 1; i < prediction.path.length; i++) {
+            const pt = this.toScreen(prediction.path[i].x + offsetX, prediction.path[i].y + offsetY);
+            this.ctx.lineTo(pt.x, pt.y);
+        }
+        this.ctx.strokeStyle = '#00aaff';
+        this.ctx.lineWidth = 1.5;
+        this.ctx.setLineDash([3, 3]);
+        this.ctx.stroke();
+        this.ctx.setLineDash([]);
+        
+        prediction.path.forEach(pt => {
+            if (pt.transition) {
+                const screenPt = this.toScreen(pt.x + offsetX, pt.y + offsetY);
+                this.ctx.beginPath();
+                this.ctx.arc(screenPt.x, screenPt.y, 3, 0, Math.PI * 2);
+                this.ctx.fillStyle = '#00aaff';
+                this.ctx.fill();
+                this.ctx.font = '10px Courier New';
+                this.ctx.fillText(`ENCOUNTER: ${pt.transition}`, screenPt.x + 6, screenPt.y);
+            }
+        });
+
+        if (prediction.hasNode) {
+            const nodePos = this.toScreen(prediction.nodeAbsPos.x + offsetX, prediction.nodeAbsPos.y + offsetY);
+            this.ctx.beginPath();
+            this.ctx.arc(nodePos.x, nodePos.y, 4, 0, Math.PI * 2);
+            this.ctx.strokeStyle = '#ffaa00';
+            this.ctx.lineWidth = 1.5;
+            this.ctx.stroke();
+            this.ctx.moveTo(nodePos.x - 8, nodePos.y); this.ctx.lineTo(nodePos.x + 8, nodePos.y);
+            this.ctx.moveTo(nodePos.x, nodePos.y - 8); this.ctx.lineTo(nodePos.x, nodePos.y + 8);
+            this.ctx.stroke();
+        }
     }
 
     drawSensorZones(entity) {

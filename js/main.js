@@ -3,7 +3,8 @@ import { Renderer } from './ui/Renderer.js';
 import { TimeManager } from './engine/TimeManager.js';
 import { CelestialBody } from './entities/CelestialBody.js';
 import { Ship } from './entities/Ship.js';
-import { generateOrbitPath } from './physics/Kepler.js';
+import { generateOrbitPath, getTimeAtAnomaly } from './physics/Kepler.js';
+const inpDelay = document.getElementById('inp-delay'); // Убедись, что переменная есть наверху
 
 const renderer = new Renderer('star-map');
 const timeManager = new TimeManager();
@@ -41,6 +42,7 @@ const chkLadar = document.getElementById('chk-ladar');
 const inpLadarAz = document.getElementById('inp-ladar-az');
 const chkGrav = document.getElementById('chk-grav');
 const chkThermal = document.getElementById('chk-thermal');
+const chkPredict = document.getElementById('chk-predict');
 
 // UI Выделенной цели
 let selectedEntity = null;
@@ -57,29 +59,73 @@ renderer.canvas.addEventListener('click', (e) => {
     const rect = renderer.canvas.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
-
-    // Переводим экранные координаты в координаты симуляции
     const worldClick = renderer.toWorld(mouseX, mouseY);
 
     let closestEntity = null;
     let minDistance = Infinity;
 
-    // Ищем ближайший объект (с учетом погрешности клика, скажем 15px в мире)
     systemEntities.forEach(entity => {
         const dx = entity.x - worldClick.x;
         const dy = entity.y - worldClick.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        
-        // Даем радиус захвата чуть больше самого объекта для удобства
         const hitRadius = Math.max(entity.radius, 10) / renderer.zoom; 
-
         if (dist < hitRadius && dist < minDistance) {
             minDistance = dist;
             closestEntity = entity;
         }
     });
 
-    selectedEntity = closestEntity;
+    // Если кликнули в пустоту, проверяем, не кликнули ли мы ПО ОРБИТЕ текущего корабля
+    let clickedOrbit = false;
+    
+    if (!closestEntity && selectedEntity && selectedEntity.type === 'ship' && selectedEntity.parent) {
+        // Вектор от родителя к месту клика
+        const dx = worldClick.x - selectedEntity.parent.renderX;
+        const dy = worldClick.y - selectedEntity.parent.renderY;
+        const clickAngle = Math.atan2(dy, dx);
+        
+        // Получаем угол (Истинную аномалию) места клика
+        let theta = clickAngle - selectedEntity.renderOmega;
+        theta = Math.atan2(Math.sin(theta), Math.cos(theta)); // Нормализация угла
+        
+        // Радиус орбиты в этом угле
+        const e = selectedEntity.renderE;
+        const a = selectedEntity.renderA;
+        const r = (a * (1 - e * e)) / (1 + e * Math.cos(theta));
+        
+        const dist = Math.hypot(dx, dy);
+        const hitTolerance = 15 / renderer.zoom; // Зона поражения кликом масштабируется зумом
+
+        // Если дистанция от клика до центра совпадает с радиусом эллипса в этой точке
+        if (Math.abs(dist - r) < hitTolerance) {
+            clickedOrbit = true;
+            
+            // Вычисляем время до этой точки
+            const targetTime = getTimeAtAnomaly(
+                theta, 
+                selectedEntity.period, 
+                selectedEntity.renderE, 
+                selectedEntity.offset, 
+                selectedEntity.direction, 
+                timeManager.time
+            );
+            
+            // Обновляем инпут DELAY
+            const delay = targetTime - timeManager.time;
+            inpDelay.value = delay.toFixed(1);
+            
+            // Мигаем полем для обратной связи
+            inpDelay.style.backgroundColor = 'rgba(255, 170, 0, 0.3)';
+            setTimeout(() => inpDelay.style.backgroundColor = 'transparent', 300);
+        }
+    }
+
+    if (closestEntity) {
+        selectedEntity = closestEntity;
+    } else if (!clickedOrbit) {
+        // Снимаем выделение только если кликнули совсем в пустоту
+        selectedEntity = null;
+    }
     
     // Обновляем UI
     if (selectedEntity) {
@@ -89,9 +135,8 @@ renderer.canvas.addEventListener('click', (e) => {
         if (selectedEntity.type === 'ship') {
             tgtType.innerText = `SHIP [${selectedEntity.shipClass}]`;
             maneuverUI.style.display = 'block';
-            sensorsUI.style.display = 'block'; // Показываем панель сенсоров
+            sensorsUI.style.display = 'block';
             
-            // Синхронизируем галочки с состоянием корабля
             chkRadar.checked = selectedEntity.radarActive;
             chkMag.checked = selectedEntity.magActive;
             chkLadar.checked = selectedEntity.ladarActive;
@@ -101,7 +146,7 @@ renderer.canvas.addEventListener('click', (e) => {
         } else {
             tgtType.innerText = selectedEntity.type.toUpperCase();
             maneuverUI.style.display = 'none';
-            sensorsUI.style.display = 'none'; // Скрываем для планет
+            sensorsUI.style.display = 'none';
         }
     } else {
         panelTarget.style.display = 'none';
@@ -290,13 +335,30 @@ function renderLoop() {
                     x: p.x + entity.parent.renderX,
                     y: p.y + entity.parent.renderY
                 }));
-                renderer.drawOrbit(renderPath);
+                
+                // Если это выделенный корабль - его текущая орбита рисуется ЖЕЛТЫМ
+                const isSelectedShip = (entity === selectedEntity && entity.type === 'ship');
+                const orbitColor = isSelectedShip ? 'rgba(255, 170, 0, 0.4)' : 'rgba(255, 255, 255, 0.2)';
+                
+                renderer.drawOrbit(renderPath, orbitColor, !isSelectedShip); // У выделенного сплошная линия
             }
             
             renderer.drawEntity(entity);
             
+            // НОВОЕ: Отрисовка ПРОГНОЗА, если выделен корабль, есть нода и включен перк
+            if (entity === selectedEntity && entity.type === 'ship' && chkPredict.checked) {
+                // ПЕРЕДАЕМ timeManager.time вторым аргументом!
+                const prediction = entity.getPredictedPath(systemEntities, timeManager.time);
+                if (prediction) {
+                    const offsetX = entity.parent.renderX - entity.parent.x;
+                    const offsetY = entity.parent.renderY - entity.parent.y;
+                    renderer.drawPredictedPath(prediction, offsetX, offsetY);
+                }
+            }
+            
             if (entity === selectedEntity) {
                 const screenPos = renderer.toScreen(entity.renderX, entity.renderY);
+                // ... (тут старый код штрихового круга вокруг объекта)
                 renderer.ctx.beginPath();
                 renderer.ctx.arc(screenPos.x, screenPos.y, (entity.radius * renderer.zoom) + 10, 0, Math.PI * 2);
                 renderer.ctx.strokeStyle = '#ffaa00';

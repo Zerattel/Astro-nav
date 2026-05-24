@@ -1,52 +1,38 @@
 // js/entities/CelestialBody.js
-import { calculateTrueAnomaly, getPositionAtAnomaly, calculatePeriod, generateOrbitPath } from '../physics/Kepler.js';
+import { calculateTrueAnomaly, getPositionAtAnomaly, calculatePeriod, generateOrbitPath, getVelocityAtAnomaly } from '../physics/Kepler.js';
 
 export class CelestialBody {
-    constructor(name, type, radius, parent = null, a = 0, e = 0, offset = 0, omega = 0, mu = 3947.84) {
+    constructor(name, type, radius, parent = null, a = 0, e = 0, offset = 0, omega = 0, mu = 3947.84, direction = 1) {
         this.name = name;
         this.type = type;
         this.radius = radius;
         this.mu = mu;
-        
         this.parent = parent;
         this.a = a;
         this.e = e;
         this.offset = offset;
         this.omega = omega;
+        this.direction = direction; // <--- Запоминаем направление
         this.period = (a > 0 && parent) ? calculatePeriod(a, parent.mu) : 0;
         
-        // НОВОЕ: Сфера влияния (SoI)
         if (this.parent && this.a > 0) {
-            // Формула Сферы Влияния Лапласа: R * (m/M)^0.4
             this.soi = this.a * Math.pow(this.mu / this.parent.mu, 0.4);
         } else {
-            this.soi = Infinity; // У центральной звезды бесконечная сфера
+            this.soi = Infinity;
         }
         
-        // --- НОВОЕ: Журнал орбит (Time = -Infinity означает "с начала времен") ---
+        // Добавляем direction в Историю
         this.orbitalHistory = [{
             time: -Infinity,
-            a: this.a,
-            e: this.e,
-            omega: this.omega,
-            offset: this.offset,
-            period: this.period
+            a: this.a, e: this.e, omega: this.omega, offset: this.offset, period: this.period,
+            direction: this.direction // <---
         }];
         
         this.children = [];
         if (this.parent) this.parent.children.push(this);
-
-        this.x = 0;
-        this.y = 0;
-        this.lastX = 0;
-        this.lastY = 0;
-
-        // Координаты и параметры орбиты для видимого прошлого
-        this.renderX = 0;
-        this.renderY = 0;
-        this.renderA = this.a;
-        this.renderE = this.e;
-        this.renderOmega = this.omega;
+        this.x = 0; this.y = 0; this.lastX = 0; this.lastY = 0;
+        this.renderX = 0; this.renderY = 0;
+        this.renderA = this.a; this.renderE = this.e; this.renderOmega = this.omega;
     }
 
     /**
@@ -64,20 +50,15 @@ export class CelestialBody {
 
     getAbsoluteVelocityAtTime(time) {
         if (!this.parent || this.a === 0) return { vx: 0, vy: 0 };
-        
         const state = this.getHistoricalState(time);
         if (state.a === 0) return this.parent.getAbsoluteVelocityAtTime(time);
 
-        const anomaly = calculateTrueAnomaly(time, state.period, state.e, state.offset);
-        // Скорость относительно родителя
-        const localVel = getVelocityAtAnomaly(state.a, state.e, anomaly, state.omega, this.parent.mu);
-        // Скорость самого родителя
+        // Передаем state.direction
+        const anomaly = calculateTrueAnomaly(time, state.period, state.e, state.offset, state.direction);
+        const localVel = getVelocityAtAnomaly(state.a, state.e, anomaly, state.omega, this.parent.mu, state.direction);
         const parentVel = this.parent.getAbsoluteVelocityAtTime(time);
         
-        return {
-            vx: localVel.vx + parentVel.vx,
-            vy: localVel.vy + parentVel.vy
-        };
+        return { vx: localVel.vx + parentVel.vx, vy: localVel.vy + parentVel.vy };
     }
 
     updatePosition(time, systemEntities = []) {
@@ -85,10 +66,10 @@ export class CelestialBody {
         this.lastY = this.y;
 
         if (!this.parent || this.a === 0) {
-            this.x = 0;
-            this.y = 0;
+            this.x = 0; this.y = 0;
         } else {
-            const anomaly = calculateTrueAnomaly(time, this.period, this.e, this.offset);
+            // Передаем this.direction
+            const anomaly = calculateTrueAnomaly(time, this.period, this.e, this.offset, this.direction);
             const localPos = getPositionAtAnomaly(this.a, this.e, anomaly, this.omega);
             this.x = this.parent.x + localPos.x;
             this.y = this.parent.y + localPos.y;
@@ -101,20 +82,15 @@ export class CelestialBody {
 
     getAbsolutePositionAtTime(time) {
         if (!this.parent) return { x: 0, y: 0 };
-        
-        // НОВОЕ: Берем параметры орбиты из нужной эпохи!
         const state = this.getHistoricalState(time);
-        
         if (state.a === 0) return this.parent.getAbsolutePositionAtTime(time);
 
         const parentPos = this.parent.getAbsolutePositionAtTime(time);
-        const anomaly = calculateTrueAnomaly(time, state.period, state.e, state.offset);
+        // Передаем state.direction
+        const anomaly = calculateTrueAnomaly(time, state.period, state.e, state.offset, state.direction);
         const localPos = getPositionAtAnomaly(state.a, state.e, anomaly, state.omega);
         
-        return {
-            x: parentPos.x + localPos.x,
-            y: parentPos.y + localPos.y
-        };
+        return { x: parentPos.x + localPos.x, y: parentPos.y + localPos.y };
     }
 
     updateRenderPosition(observer, currentTime, cSpeed) {

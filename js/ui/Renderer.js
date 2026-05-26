@@ -23,8 +23,6 @@ export class Renderer {
 
         this.FIGMA_BASE_RADIUS = 50; 
 
-        // Библиотека спрайтов флота
-        // Библиотека спрайтов флота (хранит размеры ViewBox для авто-центрирования)
         this.shipSprites = {
             'ADS': {
                 w: 147, h: 124,
@@ -578,9 +576,6 @@ export class Renderer {
                 
                 this.ctx.scale(shipScale, shipScale);
                 
-                // Компенсация поворота: корабли из Figma смотрят вверх, доворачиваем их вправо
-                this.ctx.rotate(Math.PI / 2);
-                
                 // Авто-центрирование
                 this.ctx.translate(-shipSprite.w / 2, -shipSprite.h / 2);
                 
@@ -629,5 +624,66 @@ export class Renderer {
             x: (screenX - this.offsetX) / this.zoom,
             y: (screenY - this.offsetY) / this.zoom
         };
+    }
+    // Динамическая топографическая линейка (в световых единицах)
+    drawScaleRuler(cSpeed) {
+        const maxWidthPixels = 150; // Желаемая ширина линейки на экране
+        
+        // Сколько игровых единиц помещается в эти пиксели при текущем зуме
+        const units = maxWidthPixels / this.zoom; 
+        
+        // Переводим в световые секунды (C_SPEED = 10 ед/сек)
+        const lightSecondsRaw = units / cSpeed; 
+
+        // Округляем до красивого числа (1, 5, 10, 50, 100...) для ровной рейки
+        let magnitude = Math.pow(10, Math.floor(Math.log10(lightSecondsRaw)));
+        let normalized = lightSecondsRaw / magnitude;
+        let niceStep = 1;
+        if (normalized > 5) niceStep = 5;
+        else if (normalized > 2) niceStep = 2;
+        
+        const targetLightSeconds = niceStep * magnitude;
+        
+        // Считаем точную длину рейки в пикселях под это "красивое" число
+        const targetUnits = targetLightSeconds * cSpeed;
+        const targetPixels = targetUnits * this.zoom;
+
+        // Позиция: правый нижний угол
+        const x = this.canvas.width - targetPixels - 20;
+        const y = this.canvas.height - 20;
+
+        // Форматирование текста (Сек, Мин, Часы)
+        let label = '';
+        if (targetLightSeconds < 60) label = `${targetLightSeconds} Ls`;
+        else if (targetLightSeconds < 3600) label = `${+(targetLightSeconds/60).toFixed(1)} Lm`;
+        else label = `${+(targetLightSeconds/3600).toFixed(1)} Lh`;
+
+        this.ctx.save();
+        
+        // Отрисовка самой топографической рейки (чередование черного и белого)
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillRect(x, y, targetPixels / 2, 6);
+        
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        this.ctx.fillRect(x + targetPixels / 2, y, targetPixels / 2, 6);
+        
+        // Обводка рейки
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(x, y, targetPixels, 6);
+
+        // Засечки по краям
+        this.ctx.beginPath();
+        this.ctx.moveTo(x, y - 4); this.ctx.lineTo(x, y + 10);
+        this.ctx.moveTo(x + targetPixels, y - 4); this.ctx.lineTo(x + targetPixels, y + 10);
+        this.ctx.stroke();
+
+        // Текст масштаба
+        this.ctx.font = '12px Courier New';
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.textAlign = 'right';
+        this.ctx.fillText(label, x + targetPixels, y - 8);
+
+        this.ctx.restore();
     }
 }

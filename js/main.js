@@ -3,6 +3,7 @@ import { Renderer } from './ui/Renderer.js';
 import { TimeManager } from './engine/TimeManager.js';
 import { CelestialBody } from './entities/CelestialBody.js';
 import { Ship } from './entities/Ship.js';
+import { Editor } from './ui/Editor.js';
 import { generateOrbitPath, getTimeAtAnomaly } from './physics/Kepler.js';
 
 const renderer = new Renderer('star-map');
@@ -19,8 +20,8 @@ const p3 = new CelestialBody("Pluto-X", "planet", 4, sun, 800, 0.7, 500, Math.PI
 const ship1 = new Ship("UNS-Ares", "Корвет", p2, 70, 0, 0); 
 const ship2 = new Ship("Trident-9", "Фрегат", sun, 300, 0.4, 0, Math.PI);
 p2.spriteClass = 'GAS_GIANT'; 
-p2.color = '#ffaa00';
-const systemEntities = [sun, p1, p2, m1, p3, ship1, ship2];
+p2.color = '#000000';
+let systemEntities = [sun, p1, p2, m1, p3, ship1, ship2];
 
 // UI Элементы
 const uiTime = document.getElementById('ui-time');
@@ -50,8 +51,72 @@ const panelTarget = document.getElementById('panel-target');
 const tgtName = document.getElementById('tgt-name');
 const tgtType = document.getElementById('tgt-type');
 const maneuverUI = document.getElementById('maneuver-ui');
+const entitySelect = document.getElementById('entity-select'); // <-- ДОБАВИЛИ ПЕРЕМЕННУЮ
 
 uiTrackedCount.innerText = systemEntities.length;
+function updateUI() {
+    if (!selectedEntity) {
+        panelTarget.style.display = 'none';
+        return;
+    }
+    
+    panelTarget.style.display = 'block';
+    tgtName.innerText = selectedEntity.name;
+    
+    if (selectedEntity.type === 'ship') {
+        tgtType.innerText = `SHIP [${selectedEntity.shipClass}]`;
+        maneuverUI.style.display = 'block';
+        sensorsUI.style.display = 'block';
+        
+        chkRadar.checked = selectedEntity.radarActive;
+        chkMag.checked = selectedEntity.magActive;
+        chkLadar.checked = selectedEntity.ladarActive;
+        inpLadarAz.value = selectedEntity.ladarAzimuth;
+        chkGrav.checked = selectedEntity.gravSignature;
+        chkThermal.checked = selectedEntity.thermalSignature;
+    } else {
+        tgtType.innerText = selectedEntity.type.toUpperCase();
+        maneuverUI.style.display = 'none';
+        sensorsUI.style.display = 'none';
+    }
+
+    // Синхронизируем выпадающий список (если он есть в HTML)
+    if (entitySelect) {
+        const index = systemEntities.indexOf(selectedEntity);
+        if (index !== -1) entitySelect.value = index;
+    }
+}
+
+const editor = new Editor(systemEntities, () => {
+    // Если выбранного корабля больше нет в массиве (например, после генерации/импорта)
+    if (!systemEntities.includes(selectedEntity)) {
+        selectedEntity = systemEntities.find(e => e.type === 'ship') || systemEntities[0];
+        viewObserver = selectedEntity;
+        populateEntitySelect();
+        updateUI();
+    } else {
+        populateEntitySelect();
+    }
+});
+function populateEntitySelect() {
+    if (!entitySelect) return; // Защита: если элемента нет в HTML, просто игнорируем
+    entitySelect.innerHTML = '';
+    systemEntities.forEach((e, index) => {
+        const opt = document.createElement('option');
+        opt.value = index;
+        opt.textContent = e.name;
+        if (e === selectedEntity) opt.selected = true;
+        entitySelect.appendChild(opt);
+    });
+}
+populateEntitySelect();
+
+if (entitySelect) {
+    entitySelect.addEventListener('change', (e) => {
+        selectedEntity = systemEntities[e.target.value];
+        updateUI();
+    });
+}
 
 // --- ОБРАБОТКА КЛИКОВ (ВЫДЕЛЕНИЕ ОБЪЕКТОВ) ---
 renderer.canvas.addEventListener('click', (e) => {
@@ -128,29 +193,7 @@ renderer.canvas.addEventListener('click', (e) => {
     }
     
     // Обновляем UI
-    if (selectedEntity) {
-        panelTarget.style.display = 'block';
-        tgtName.innerText = selectedEntity.name;
-        
-        if (selectedEntity.type === 'ship') {
-            tgtType.innerText = `SHIP [${selectedEntity.shipClass}]`;
-            maneuverUI.style.display = 'block';
-            sensorsUI.style.display = 'block';
-            
-            chkRadar.checked = selectedEntity.radarActive;
-            chkMag.checked = selectedEntity.magActive;
-            chkLadar.checked = selectedEntity.ladarActive;
-            inpLadarAz.value = selectedEntity.ladarAzimuth;
-            chkGrav.checked = selectedEntity.gravSignature;
-            chkThermal.checked = selectedEntity.thermalSignature;
-        } else {
-            tgtType.innerText = selectedEntity.type.toUpperCase();
-            maneuverUI.style.display = 'none';
-            sensorsUI.style.display = 'none';
-        }
-    } else {
-        panelTarget.style.display = 'none';
-    }
+    updateUI();
 });
 
 btnBurn.addEventListener('click', () => {
@@ -398,7 +441,7 @@ function renderLoop() {
             }
         }
     });
-
+    renderer.drawScaleRuler(C_SPEED);
     requestAnimationFrame(renderLoop);
 }
 

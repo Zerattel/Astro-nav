@@ -30,6 +30,9 @@
                     <p>Time: <span id="ui-time">0.0</span></p>
                     <p>Warp: <span id="ui-warp">1</span>x</p>
                     <button id="btn-view-mode" class="btn" style="margin-top: 10px; width: 100%; border-color: #00ffcc; color: #00ffcc;">VIEW: GLOBAL (GM)</button>
+                    <h2>АСТРОГАТОР v1.0</h2>
+                        <button id="btn-editor" style="width: 100%; margin-bottom: 15px; padding: 10px; background: #00ffaa; color: #000; font-weight: bold; cursor: pointer;">[ ОТКРЫТЬ РЕДАКТОР СИСТЕМЫ ]</button>
+                        <input type="file" id="import-file" style="display: none;" accept=".json">
                 </div>
                 
                 <div class="ui-panel">
@@ -86,5 +89,22 @@
 
     <!-- Подключаем главный скрипт как модуль -->
     <script type="module" src="js/main.js"></script>
+
+    <div id="editor-modal" class="editor-modal hidden">
+        <div class="editor-header">
+            <h3>РЕДАКТОР СИСТЕМЫ</h3>
+            <button id="btn-close-editor">X</button>
+        </div>
+        <div class="editor-controls">
+            <button id="btn-generate-system">СЛУЧАЙНАЯ СИСТЕМА</button>
+            <button id="btn-export-system">ЭКСПОРТ (JSON)</button>
+            <button id="btn-import-system">ИМПОРТ (JSON)</button>
+        </div>
+        <div class="editor-body">
+            <div id="editor-entity-list" class="editor-list"></div>
+            <div id="editor-entity-form" class="editor-form">
+                </div>
+        </div>
+    </div>
 </body>
 </html>

@@ -282,50 +282,74 @@ function renderLoop() {
         });
     }
 
+    // Внутри main.js в renderLoop():
+    
     systemEntities.forEach(entity => {
-        // --- ЛОГИКА ВИДИМОСТИ ---
-        let isVisible = true;
-        
-        if (viewObserver && entity !== viewObserver && entity.type === 'ship') {
-            isVisible = false; 
-            
-            let pastState = entity; 
-            if (entity.orbitalHistory) {
-                 const distanceToTarget = Math.hypot(entity.renderX - viewObserver.renderX, entity.renderY - viewObserver.renderY);
-                 const tPast = timeManager.time - (distanceToTarget / C_SPEED);
-                 pastState = entity.getHistoricalState(tPast);
-            }
+        // --- УРОВНИ ОСВЕДОМЛЕННОСТИ (INTEL LEVELS) ---
+        // 0 = Невидимый, 1 = Пеленг (Линия), 2 = Радар (Анонимная точка), 3 = Ладар (Полный профиль)
+        const INTEL_NONE = 0;
+        const INTEL_BEARING = 1;
+        const INTEL_POSITION = 2;
+        const INTEL_STATE = 3;
 
-            const dist = Math.hypot(entity.renderX - viewObserver.renderX, entity.renderY - viewObserver.renderY);
+        let intelLevel = INTEL_STATE; // Для планет и режима бога - видим всё
+        let bearingLabel = '';
+        let bearingColor = '';
+
+        if (viewObserver && viewObserver.type === 'ship' && entity.type === 'ship' && viewObserver !== entity) {
+            intelLevel = INTEL_NONE;
             
-            // Проверка преград для Ладара и Радара
+            // Расчет дистанции и линии видимости
+            const distToObserver = Math.hypot(entity.renderX - viewObserver.renderX, entity.renderY - viewObserver.renderY);
+            const delay = distToObserver / C_SPEED;
+            const pastState = entity.getHistoricalState(timeManager.time - delay);
             const hasLoS = isLineOfSightClear(viewObserver.renderX, viewObserver.renderY, entity.renderX, entity.renderY);
 
-            // 1. МАГНИТОМЕТР (Не требует Line of Sight)
-            if (viewObserver.magActive && dist <= viewObserver.magRange) isVisible = true;
-            if (!isVisible && pastState.magActive) isVisible = true;
-
-            // 2. РАДАР (ОБНОВЛЕНО: Теперь строго требует Line of Sight!)
-            if (viewObserver.radarActive && dist <= viewObserver.radarRange && hasLoS) isVisible = true;
-            if (!isVisible && pastState.radarActive && dist <= entity.radarRange * 2 && hasLoS) isVisible = true;
-
-            // 3. ЛАДАР (Требует Line of Sight)
-            if (!isVisible && viewObserver.ladarActive && hasLoS) {
-                if (isInLadarCone(viewObserver.renderX, viewObserver.renderY, entity.renderX, entity.renderY, viewObserver.ladarAzimuth)) {
-                    isVisible = true;
+            // 1. СИСТЕМЫ ПРЕДУПРЕЖДЕНИЯ И ПАССИВНЫЕ (Дают INTEL_BEARING)
+            if (pastState.gravSignature) {
+                intelLevel = INTEL_BEARING;
+                bearingLabel = 'GRAV'; bearingColor = '#ff00aa';
+            }
+            if (hasLoS) {
+                if (pastState.thermalSignature && intelLevel < INTEL_BEARING) {
+                    intelLevel = INTEL_BEARING;
+                    bearingLabel = 'THERM'; bearingColor = '#ffaa00';
+                }
+                // ИСПРАВЛЕНИЕ 1: RWR ловит односторонний сигнал на двойной дистанции Радара
+                if (pastState.radarActive && distToObserver <= (entity.radarRange * 2) && intelLevel < INTEL_BEARING) {
+                    intelLevel = INTEL_BEARING;
+                    bearingLabel = 'RWR'; bearingColor = '#ffff00';
+                }
+                // LWS (Laser Warning System) - Враг навел на нас Ладар!
+                if (pastState.ladarActive && isInLadarCone(entity.renderX, entity.renderY, viewObserver.renderX, viewObserver.renderY, pastState.ladarAzimuth) && intelLevel < INTEL_BEARING) {
+                    intelLevel = INTEL_BEARING;
+                    bearingLabel = 'LWS'; bearingColor = '#ff0000'; 
                 }
             }
-            if (!isVisible && pastState.ladarActive && hasLoS) isVisible = true;
 
-            // 4. ПАССИВНЫЕ ИЛС и ГРАВИТОМЕТР
-            if (pastState.gravSignature) renderer.drawBearing(viewObserver, entity, '#ff00aa', 'GRAV');
-            // Тепловая сигнатура (ИК-диапазон) тоже должна блокироваться планетами
-            if (pastState.thermalSignature && hasLoS) renderer.drawBearing(viewObserver, entity, '#ffaa00', 'THERMAL');
+            // 2. НАШ АКТИВНЫЙ РАДАР (Дает INTEL_POSITION)
+            if (hasLoS && viewObserver.radarActive && distToObserver <= viewObserver.radarRange) {
+                intelLevel = INTEL_POSITION;
+            }
+
+            // 3. НАШ ЛАДАР ИЛИ В УПОР (Дает INTEL_STATE - Полные данные)
+            if (hasLoS) {
+                if (viewObserver.ladarActive && isInLadarCone(viewObserver.renderX, viewObserver.renderY, entity.renderX, entity.renderY, viewObserver.ladarAzimuth)) {
+                    intelLevel = INTEL_STATE;
+                }
+                if (distToObserver <= 50) { // Визуальный контакт в упор
+                    intelLevel = INTEL_STATE;
+                }
+            }
+        } else if (viewObserver && viewObserver === entity) {
+            intelLevel = INTEL_STATE; // Себя мы видим всегда в полном качестве
         }
 
-        // --- ОТРИСОВКА (если видим) ---
-        if (isVisible || !viewObserver) {
-            if (entity.parent) {
+        // --- ОТРИСОВКА В ЗАВИСИМОСТИ ОТ INTEL LEVEL ---
+        if (intelLevel > INTEL_NONE) {
+            
+            // Орбиту рисуем ТОЛЬКО если у нас полные данные (STATE) или это планета
+            if (entity.parent && (intelLevel === INTEL_STATE || !viewObserver || entity.type !== 'ship')) {
                 const renderA = entity.renderA !== undefined ? entity.renderA : entity.a;
                 const renderE = entity.renderE !== undefined ? entity.renderE : entity.e;
                 const renderOmega = entity.renderOmega !== undefined ? entity.renderOmega : entity.omega;
@@ -336,29 +360,35 @@ function renderLoop() {
                     y: p.y + entity.parent.renderY
                 }));
                 
-                // Если это выделенный корабль - его текущая орбита рисуется ЖЕЛТЫМ
                 const isSelectedShip = (entity === selectedEntity && entity.type === 'ship');
                 const orbitColor = isSelectedShip ? 'rgba(255, 170, 0, 0.4)' : 'rgba(255, 255, 255, 0.2)';
-                
-                renderer.drawOrbit(renderPath, orbitColor, !isSelectedShip); // У выделенного сплошная линия
+                renderer.drawOrbit(renderPath, orbitColor, !isSelectedShip);
             }
             
-            renderer.drawEntity(entity);
-            
-            // НОВОЕ: Отрисовка ПРОГНОЗА, если выделен корабль, есть нода и включен перк
-            if (entity === selectedEntity && entity.type === 'ship' && chkPredict.checked) {
-                // ПЕРЕДАЕМ timeManager.time вторым аргументом!
-                const prediction = entity.getPredictedPath(systemEntities, timeManager.time);
-                if (prediction) {
-                    const offsetX = entity.parent.renderX - entity.parent.x;
-                    const offsetY = entity.parent.renderY - entity.parent.y;
-                    renderer.drawPredictedPath(prediction, offsetX, offsetY);
+            if (intelLevel === INTEL_BEARING) {
+                renderer.drawBearing(viewObserver, entity, bearingColor, bearingLabel);
+            } 
+            else if (intelLevel === INTEL_POSITION) {
+                renderer.drawRadarBlip(entity);
+            } 
+            else if (intelLevel === INTEL_STATE) {
+                renderer.drawEntity(entity);
+                
+                // ИСПРАВЛЕНИЕ 2: Убрана проверка entity.maneuverNodes.length > 0, 
+                // теперь перк прогнозирования работает всегда, отображая текущий курс
+                if (entity === selectedEntity && entity.type === 'ship' && chkPredict.checked) {
+                    const prediction = entity.getPredictedPath(systemEntities, timeManager.time);
+                    if (prediction) {
+                        const offsetX = entity.parent.renderX - entity.parent.x;
+                        const offsetY = entity.parent.renderY - entity.parent.y;
+                        renderer.drawPredictedPath(prediction, offsetX, offsetY);
+                    }
                 }
             }
-            
+
+            // Штриховой круг выделения (желтый прицел)
             if (entity === selectedEntity) {
                 const screenPos = renderer.toScreen(entity.renderX, entity.renderY);
-                // ... (тут старый код штрихового круга вокруг объекта)
                 renderer.ctx.beginPath();
                 renderer.ctx.arc(screenPos.x, screenPos.y, (entity.radius * renderer.zoom) + 10, 0, Math.PI * 2);
                 renderer.ctx.strokeStyle = '#ffaa00';

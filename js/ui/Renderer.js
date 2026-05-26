@@ -21,17 +21,110 @@ export class Renderer {
         window.addEventListener('resize', () => this.resize());
         this.setupCameraControls();
 
+        this.FIGMA_BASE_RADIUS = 50; 
+
+        // Библиотека спрайтов флота
+        // Библиотека спрайтов флота (хранит размеры ViewBox для авто-центрирования)
         this.shipSprites = {
-            'CORVETTE': new Path2D('M 12 0 L -8 6 L -4 0 L -8 -6 Z'), // Острый перехватчик
-            'FRIGATE': new Path2D('M 15 0 L -10 8 L -6 4 L -6 -4 L -10 -8 Z'), // Угловатый
-            'CRUISER': new Path2D('M 18 0 L 8 5 L -12 8 L -8 0 L -12 -8 L 8 -5 Z'), // Массивный
-            'DEFAULT': new Path2D('M 10 0 L -6 5 L -3 0 L -6 -5 Z') // Запасной вариант
+            'ADS': {
+                w: 147, h: 124,
+                paths: [
+                    'M62.0029 124.009L0 62.006L62.0029 0.00303799L66.5 4.50011L8.99707 62.003L66.5029 119.509L62.0029 124.009Z',
+                    'M147.003 62.003L84.9999 124.006L22.9969 62.003L84.9999 0L147.003 62.003Z'
+                ]
+            },
+            'BATTLECRUISER': {
+                w: 111, h: 99,
+                paths: [
+                    'M9 2.01073e-06L9 99H0L4.32743e-06 1.61733e-06L9 2.01073e-06Z',
+                    'M111 49.4978L65 98.9983L65 0L111 49.4978Z',
+                    'M65 0L65 99H20L20 4.3714e-08L65 0Z'
+                ]
+            },
+            'BATTLESHIP': {
+                w: 127, h: 100,
+                paths: [
+                    'M0 99L7.72707e-09 98.8232L52.001 49.5L4.31971e-06 0.176758L4.32743e-06 0L75 3.27836e-06L75 99H0Z',
+                    'M127 49.6186L75 99.119L75 3.27836e-06L127 49.6186Z'
+                ]
+            },
+            'CORVETTE': {
+                w: 28, h: 54,
+                paths: [
+                    'M0 53.6934L3.38288e-07 45.9541L19.75 26.8467L2.00872e-06 7.73926L2.34701e-06 0L27.75 26.8467L0 53.6934Z'
+                ]
+            },
+            'CRUISER': {
+                w: 91, h: 99,
+                paths: [
+                    'M91 49.4962L45 98.9966L45 0L91 49.4962Z',
+                    'M45 0L45 99H0L4.32743e-06 4.3714e-08L45 0Z'
+                ]
+            },
+            'DESTROYER': {
+                w: 67, h: 100,
+                paths: [
+                    'M67 49.7965L20.5 99.5929L20.5 0L67 49.7965Z',
+                    'M5 0.296461L5 99.2965H0L4.32743e-06 0.296461L5 0.296461Z'
+                ]
+            },
+            'DREADNOUGHT': {
+                w: 140, h: 143,
+                paths: [
+                    'M140 71.0141L69.5 142.028L69.5 0L140 71.0141Z',
+                    'M0 71.0141L37.5 33.775V108.253L0 71.0141Z',
+                    'M69.5 0.0140869L69.4946 142.014H32.9946L32.9946 0.0140853L69.5 0.0140869Z'
+                ]
+            },
+            'FREGATE': {
+                w: 47, h: 100,
+                paths: [
+                    'M46.5 49.7965L0 99.5929L4.35335e-06 0L46.5 49.7965Z'
+                ]
+            },
+            'TITAN': {
+                w: 156, h: 98,
+                paths: [
+                    'M60 98V97.9932L108 48.9893L60 0L108 2.09815e-06L108 98H60Z',
+                    'M156 48.9892L108 97.9929L108 2.09815e-06L156 48.9892Z',
+                    'M0 98L3.0559e-10 97.9932L48 48.9893L4.28372e-06 0L48 2.09815e-06L48 98H0Z',
+                    'M96 48.9892L48 97.9929L48 2.09815e-06L96 48.9892Z'
+                ]
+            },
+            'DEFAULT': { 
+                w: 20, h: 20, 
+                paths: ['M 20 10 L 0 20 L 5 10 L 0 0 Z'] 
+            }
         };
+
+        // Библиотека небесных тел и станций
         this.bodySprites = {
-            'STAR': new Path2D('M 10 0 A 10 10 0 1 0 -10 0 A 10 10 0 1 0 10 0'), // Идеальный круг
-            'PLANET': new Path2D('M 10 0 A 10 10 0 1 0 -10 0 A 10 10 0 1 0 10 0'), 
-            'MOON': new Path2D('M 10 0 A 10 10 0 1 0 -10 0 A 10 10 0 1 0 10 0'),
-            'GAS_GIANT': new Path2D('M 10 0 A 10 10 0 1 0 -10 0 A 10 10 0 1 0 10 0 M -18 0 C -18 -4 18 -4 18 0 C 18 4 -18 4 -18 0')
+            'GASGIANT': {
+                w: 682, h: 682,
+                paths: [
+                    'M527.088 261.031C544.023 263.987 559.856 267.336 574.387 271.035C604.387 278.673 629.495 287.958 647.382 298.725C664.548 309.058 678.637 322.993 678.637 341.004C678.637 359.015 664.548 372.95 647.382 383.283C629.495 394.05 604.387 403.334 574.387 410.973C514.209 426.294 431.698 435.643 340.998 435.643C250.298 435.643 167.787 426.294 107.609 410.973C77.6089 403.334 52.5011 394.05 34.6143 383.283C17.4477 372.95 3.35938 359.015 3.35938 341.004C3.35938 322.993 17.4477 309.058 34.6143 298.725C52.5011 287.958 77.6089 278.673 107.609 271.035C122.139 267.336 137.971 263.987 154.905 261.031C148.159 269.096 144.353 277.733 144.021 286.722C133.213 288.849 122.969 291.144 113.353 293.593C84.3589 300.975 61.7252 309.575 46.6191 318.668C30.7927 328.195 26.6367 336.095 26.6367 341.004C26.6367 345.912 30.7927 353.813 46.6191 363.34C61.7252 372.433 84.3589 381.033 113.353 388.415C171.163 403.134 251.653 412.365 340.998 412.365C430.343 412.365 510.833 403.134 568.644 388.415C597.637 381.033 620.271 372.433 635.377 363.34C651.203 353.813 655.359 345.912 655.359 341.004C655.359 336.095 651.203 328.195 635.377 318.668C620.271 309.575 597.637 300.975 568.644 293.593C559.026 291.144 548.781 288.848 537.972 286.721C537.64 277.732 533.834 269.096 527.088 261.031Z',
+                    'M340.993 143.772C449.914 143.772 538.212 232.07 538.212 340.991C538.212 449.913 449.914 538.211 340.993 538.211C232.072 538.211 143.773 449.913 143.773 340.991C143.773 232.07 232.072 143.772 340.993 143.772Z',
+                    'M296.273 533.016C392.433 524.569 467.912 441.822 467.912 340.99C467.912 239.557 391.532 156.426 294.555 148.82'
+                ]
+            },
+            'PLANET': {
+                w: 694, h: 694,
+                paths: [
+                    'M346.575 11.6396C531.554 11.6396 681.509 161.595 681.509 346.574C681.509 531.553 531.554 681.508 346.575 681.508C161.596 681.508 11.6406 531.553 11.6406 346.574C11.6406 161.595 161.596 11.6396 346.575 11.6396Z',
+                    'M270.613 672.691C433.92 658.346 562.105 517.819 562.105 346.577C562.105 174.316 432.389 33.1348 267.695 20.2188'
+                ]
+            },
+            'MOON': {
+                w: 694, h: 694,
+                paths: [
+                    'M346.575 11.6396C531.554 11.6396 681.509 161.595 681.509 346.574C681.509 531.553 531.554 681.508 346.575 681.508C161.596 681.508 11.6406 531.553 11.6406 346.574C11.6406 161.595 161.596 11.6396 346.575 11.6396Z',
+                    'M270.613 672.691C433.92 658.346 562.105 517.819 562.105 346.577C562.105 174.316 432.389 33.1348 267.695 20.2188'
+                ]
+            },
+            'STATION': {
+                w: 100, h: 100,
+                paths: ['M 0 0 L 100 0 L 100 100 L 0 100 Z'] // Простой квадрат
+            }
         };
     }
 
@@ -359,7 +452,7 @@ export class Renderer {
         const dy = target.y - start.y;
         const angle = Math.atan2(dy, dx);
         
-        const length = 100; 
+        const length = 2500; // Делаем луч на весь экран, как настоящий пеленг!
         const endX = start.x + Math.cos(angle) * length;
         const endY = start.y + Math.sin(angle) * length;
 
@@ -367,30 +460,57 @@ export class Renderer {
         this.ctx.moveTo(start.x, start.y);
         this.ctx.lineTo(endX, endY);
         this.ctx.strokeStyle = color;
+        
+        // Делаем линию штриховой, чтобы подчеркнуть погрешность пеленгатора
+        this.ctx.setLineDash([10, 15]); 
         this.ctx.lineWidth = 1;
         this.ctx.stroke();
+        this.ctx.setLineDash([]);
 
-        this.ctx.font = '10px Courier New';
+        this.ctx.font = '12px Courier New';
         this.ctx.fillStyle = color;
-        this.ctx.fillText(`[${label} BEARING]`, endX + 5, endY + 5);
+        // Текст рисуем чуть поодаль от нашего корабля
+        const textX = start.x + Math.cos(angle) * 150;
+        const textY = start.y + Math.sin(angle) * 150;
+        this.ctx.fillText(`[WARN: ${label} EMISSION DETECTED]`, textX, textY);
     }
-    
+
+    drawPathSprite(spriteData, fillColor, strokeColor, lineWidth = 1) {
+        this.ctx.fillStyle = fillColor;
+        this.ctx.strokeStyle = strokeColor;
+        this.ctx.lineWidth = lineWidth;
+
+        if (Array.isArray(spriteData)) {
+            // Если передан массив строк путей из Figma
+            spriteData.forEach(pathStr => {
+                const pathObj = new Path2D(pathStr);
+                this.ctx.fill(pathObj);
+                if (strokeColor) this.ctx.stroke(pathObj);
+            });
+        } else if (spriteData instanceof Path2D) {
+            // Если передан готовый Path2D объект
+            this.ctx.fill(spriteData);
+            if (strokeColor) this.ctx.stroke(spriteData);
+        } else if (typeof spriteData === 'string') {
+            // Если передана одиночная строка пути
+            const pathObj = new Path2D(spriteData);
+            this.ctx.fill(pathObj);
+            if (strokeColor) this.ctx.stroke(pathObj);
+        }
+    }
+
     drawEntity(entity) {
         const screenPos = this.toScreen(entity.renderX, entity.renderY);
         const r = Math.max(entity.radius * this.zoom, 2);
 
-        this.ctx.beginPath();
-        this.ctx.strokeStyle = '#ffffff';
-        
-        // НОВОЕ: Цвет корабля/иконки (можно будет привязать к фракции)
-        const entityColor = entity.color || '#ffffff'; 
-        this.ctx.fillStyle = entityColor;
+        const entityColor = entity.color || '#ffffff';
+        const strokeColor = 'rgba(255, 255, 255, 0.8)';
 
         switch (entity.type) {
             case 'star':
             case 'planet':
             case 'moon':
-                // 1. Отрисовка атмосферного свечения для звезд (остается градиентом)
+            case 'station':
                 if (entity.type === 'star') {
                     const glowRadius = r * 5;
                     const gradient = this.ctx.createRadialGradient(
@@ -408,39 +528,31 @@ export class Renderer {
                     this.ctx.fill();
                 }
 
-                // 2. Выбираем спрайт (по параметру spriteClass или по типу тела)
-                const spriteKey = entity.spriteClass || entity.type.toUpperCase();
-                const sprite = this.bodySprites[spriteKey];
+                // Выбираем спрайт (если нет ключа, подменяем на дефолт)
+                const bodyKey = entity.spriteClass || (entity.type === 'station' ? 'STATION' : 'PLANET');
+                const bodySprite = this.bodySprites[bodyKey] || this.bodySprites['PLANET'];
 
-                if (sprite) {
-                    this.ctx.save();
-                    this.ctx.translate(screenPos.x, screenPos.y);
-                    
-                    // Динамический масштаб: подгоняем базовый радиус (10) под реальный (r)
-                    const scale = r / 10;
-                    this.ctx.scale(scale, scale);
-                    
-                    this.ctx.fillStyle = entityColor;
-                    this.ctx.fill(sprite);
-                    
-                    // Обводка для стиля (сохраняем ее толщину независимой от зума)
-                    this.ctx.strokeStyle = entity.type === 'star' ? '#ffffff' : 'rgba(255, 255, 255, 0.8)';
-                    this.ctx.lineWidth = 1.5 / scale;
-                    this.ctx.stroke(sprite);
-                    
-                    this.ctx.restore();
-                } else {
-                    // Запасной старый вариант, если спрайт не найден
-                    this.ctx.beginPath();
-                    this.ctx.arc(screenPos.x, screenPos.y, r, 0, Math.PI * 2);
-                    if (entity.type === 'star') {
-                        this.ctx.fill();
-                    } else {
-                        this.ctx.stroke();
-                    }
-                }
+                this.ctx.save();
+                this.ctx.translate(screenPos.x, screenPos.y);
+                
+                // Идеальное масштабирование на основе самого большого измерения спрайта
+                const bodyBaseRadius = Math.max(bodySprite.w, bodySprite.h) / 2;
+                const bodyScale = r / bodyBaseRadius;
+                
+                this.ctx.scale(bodyScale, bodyScale);
+                
+                // Авто-центрирование: сдвигаем холст на половину ширины и высоты спрайта
+                this.ctx.translate(-bodySprite.w / 2, -bodySprite.h / 2);
+                
+                this.drawPathSprite(
+                    bodySprite.paths, 
+                    entityColor, 
+                    entity.type === 'star' ? '#ffffff' : strokeColor, 
+                    1.5 / bodyScale // Компенсация толщины обводки
+                );
+                this.ctx.restore();
 
-                // 3. Отрисовка пунктирной Сферы Влияния (SoI)
+                // Пунктирная линия Сферы Влияния (SoI)
                 if (entity.soi !== Infinity && (entity.type === 'planet' || entity.type === 'moon')) {
                     this.ctx.beginPath();
                     this.ctx.arc(screenPos.x, screenPos.y, entity.soi * this.zoom, 0, Math.PI * 2);
@@ -451,6 +563,31 @@ export class Renderer {
                     this.ctx.setLineDash([]);
                 }
                 break;
+                
+            case 'ship':
+                this.ctx.save();
+                this.ctx.translate(screenPos.x, screenPos.y);
+                this.ctx.rotate(entity.heading); 
+                
+                const shipKey = entity.shipClass || 'DEFAULT';
+                const shipSprite = this.shipSprites[shipKey] || this.shipSprites['DEFAULT'];
+                
+                const shipBaseRadius = Math.max(shipSprite.w, shipSprite.h) / 2;
+                const targetShipScreenSize = Math.max(r, 6); 
+                const shipScale = targetShipScreenSize / shipBaseRadius;
+                
+                this.ctx.scale(shipScale, shipScale);
+                
+                // Компенсация поворота: корабли из Figma смотрят вверх, доворачиваем их вправо
+                this.ctx.rotate(Math.PI / 2);
+                
+                // Авто-центрирование
+                this.ctx.translate(-shipSprite.w / 2, -shipSprite.h / 2);
+                
+                this.drawPathSprite(shipSprite.paths, entityColor, 'rgba(0, 0, 0, 0.8)', 1 / shipScale);
+
+                this.ctx.restore();
+                break;
         }
 
         if (this.zoom > 0.5 || entity.type === 'star' || entity.type === 'planet') {
@@ -458,6 +595,33 @@ export class Renderer {
             this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
             this.ctx.fillText(entity.name, screenPos.x + r + 5, screenPos.y - r - 5);
         }
+    }
+
+    // Отрисовка анонимного радарного контакта (без орбиты и вектора)
+    drawRadarBlip(entity) {
+        const screenPos = this.toScreen(entity.renderX, entity.renderY);
+        
+        // Рисуем футуристичный ромб
+        this.ctx.beginPath();
+        this.ctx.moveTo(screenPos.x, screenPos.y - 6);
+        this.ctx.lineTo(screenPos.x + 6, screenPos.y);
+        this.ctx.lineTo(screenPos.x, screenPos.y + 6);
+        this.ctx.lineTo(screenPos.x - 6, screenPos.y);
+        this.ctx.closePath();
+        
+        this.ctx.fillStyle = 'rgba(0, 255, 204, 0.3)';
+        this.ctx.fill();
+        this.ctx.strokeStyle = 'rgba(0, 255, 204, 1)';
+        this.ctx.lineWidth = 1.5;
+        this.ctx.stroke();
+
+        // Рисуем метку (генерируем псевдо-ID из имени корабля)
+        this.ctx.font = '10px Courier New';
+        this.ctx.fillStyle = 'rgba(0, 255, 204, 0.8)';
+        // Хэшируем имя, чтобы ID контакта не менялся, но не выдавал реальное имя
+        const hashId = Math.abs(entity.name.split('').reduce((a,b)=>{a=((a<<5)-a)+b.charCodeAt(0);return a&a},0)).toString().substring(0,4);
+        
+        this.ctx.fillText(`TRK-${hashId}`, screenPos.x + 10, screenPos.y + 4);
     }
     
     toWorld(screenX, screenY) {

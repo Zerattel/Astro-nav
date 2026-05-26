@@ -1,5 +1,5 @@
 :root {
-    --bg-color: #050505;
+    --bg-color: #000000; /* Меняем на истинный OLED Black */
     --fg-color: #ffffff;
     --accent-dim: rgba(255, 255, 255, 0.15);
     --hazard-bg: repeating-linear-gradient(
@@ -43,8 +43,8 @@ canvas {
     display: block;
     width: 100%;
     height: 100%;
-    background: radial-gradient(circle at center, #111 0%, #000 100%);
-    cursor: crosshair; /* Тактический прицел по умолчанию */
+    background-color: #000000; /* Убираем радиальный градиент, ставим чистый черный */
+    cursor: crosshair;
 }
 
 .viewport-overlay {

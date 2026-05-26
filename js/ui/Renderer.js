@@ -20,6 +20,19 @@ export class Renderer {
         this.resize();
         window.addEventListener('resize', () => this.resize());
         this.setupCameraControls();
+
+        this.shipSprites = {
+            'CORVETTE': new Path2D('M 12 0 L -8 6 L -4 0 L -8 -6 Z'), // Острый перехватчик
+            'FRIGATE': new Path2D('M 15 0 L -10 8 L -6 4 L -6 -4 L -10 -8 Z'), // Угловатый
+            'CRUISER': new Path2D('M 18 0 L 8 5 L -12 8 L -8 0 L -12 -8 L 8 -5 Z'), // Массивный
+            'DEFAULT': new Path2D('M 10 0 L -6 5 L -3 0 L -6 -5 Z') // Запасной вариант
+        };
+        this.bodySprites = {
+            'STAR': new Path2D('M 10 0 A 10 10 0 1 0 -10 0 A 10 10 0 1 0 10 0'), // Идеальный круг
+            'PLANET': new Path2D('M 10 0 A 10 10 0 1 0 -10 0 A 10 10 0 1 0 10 0'), 
+            'MOON': new Path2D('M 10 0 A 10 10 0 1 0 -10 0 A 10 10 0 1 0 10 0'),
+            'GAS_GIANT': new Path2D('M 10 0 A 10 10 0 1 0 -10 0 A 10 10 0 1 0 10 0 M -18 0 C -18 -4 18 -4 18 0 C 18 4 -18 4 -18 0')
+        };
     }
 
     resize() {
@@ -275,7 +288,6 @@ export class Renderer {
             this.maskCtx.lineTo(screenP1.x, screenP1.y);
             this.maskCtx.lineTo(screenP2.x, screenP2.y);
             this.maskCtx.lineTo(screenT2.x, screenT2.y);
-            this.maskCtx.lineTo(screenBody.x, screenBody.y); // Центр планеты
             this.maskCtx.closePath();
             this.maskCtx.fill();
 
@@ -283,6 +295,8 @@ export class Renderer {
             this.maskCtx.beginPath();
             this.maskCtx.arc(screenBody.x, screenBody.y, body.radius * this.zoom, 0, Math.PI * 2);
             this.maskCtx.fill();
+            this.maskCtx.lineWidth = 2;
+            this.maskCtx.stroke();
         });
 
         // Возвращаем режим в норму
@@ -367,27 +381,67 @@ export class Renderer {
 
         this.ctx.beginPath();
         this.ctx.strokeStyle = '#ffffff';
-        this.ctx.fillStyle = '#ffffff';
+        
+        // НОВОЕ: Цвет корабля/иконки (можно будет привязать к фракции)
+        const entityColor = entity.color || '#ffffff'; 
+        this.ctx.fillStyle = entityColor;
 
         switch (entity.type) {
             case 'star':
-                this.ctx.arc(screenPos.x, screenPos.y, r, 0, Math.PI * 2);
-                this.ctx.fill();
-                break;
-
             case 'planet':
             case 'moon':
-                this.ctx.arc(screenPos.x, screenPos.y, r, 0, Math.PI * 2);
-                this.ctx.lineWidth = entity.type === 'moon' ? 1 : 2;
-                this.ctx.stroke();
-                
-                this.ctx.moveTo(screenPos.x - r - 2, screenPos.y);
-                this.ctx.lineTo(screenPos.x + r + 2, screenPos.y);
-                this.ctx.moveTo(screenPos.x, screenPos.y - r - 2);
-                this.ctx.lineTo(screenPos.x, screenPos.y + r + 2);
-                this.ctx.lineWidth = 1;
-                this.ctx.stroke();
-                if (entity.soi !== Infinity) {
+                // 1. Отрисовка атмосферного свечения для звезд (остается градиентом)
+                if (entity.type === 'star') {
+                    const glowRadius = r * 5;
+                    const gradient = this.ctx.createRadialGradient(
+                        screenPos.x, screenPos.y, r * 0.1, 
+                        screenPos.x, screenPos.y, glowRadius
+                    );
+                    gradient.addColorStop(0, '#ffffff');
+                    gradient.addColorStop(0.1, '#fff1e8');
+                    gradient.addColorStop(0.4, 'rgba(255, 170, 0, 0.4)');
+                    gradient.addColorStop(1, 'rgba(255, 170, 0, 0)');
+
+                    this.ctx.beginPath();
+                    this.ctx.arc(screenPos.x, screenPos.y, glowRadius, 0, Math.PI * 2);
+                    this.ctx.fillStyle = gradient;
+                    this.ctx.fill();
+                }
+
+                // 2. Выбираем спрайт (по параметру spriteClass или по типу тела)
+                const spriteKey = entity.spriteClass || entity.type.toUpperCase();
+                const sprite = this.bodySprites[spriteKey];
+
+                if (sprite) {
+                    this.ctx.save();
+                    this.ctx.translate(screenPos.x, screenPos.y);
+                    
+                    // Динамический масштаб: подгоняем базовый радиус (10) под реальный (r)
+                    const scale = r / 10;
+                    this.ctx.scale(scale, scale);
+                    
+                    this.ctx.fillStyle = entityColor;
+                    this.ctx.fill(sprite);
+                    
+                    // Обводка для стиля (сохраняем ее толщину независимой от зума)
+                    this.ctx.strokeStyle = entity.type === 'star' ? '#ffffff' : 'rgba(255, 255, 255, 0.8)';
+                    this.ctx.lineWidth = 1.5 / scale;
+                    this.ctx.stroke(sprite);
+                    
+                    this.ctx.restore();
+                } else {
+                    // Запасной старый вариант, если спрайт не найден
+                    this.ctx.beginPath();
+                    this.ctx.arc(screenPos.x, screenPos.y, r, 0, Math.PI * 2);
+                    if (entity.type === 'star') {
+                        this.ctx.fill();
+                    } else {
+                        this.ctx.stroke();
+                    }
+                }
+
+                // 3. Отрисовка пунктирной Сферы Влияния (SoI)
+                if (entity.soi !== Infinity && (entity.type === 'planet' || entity.type === 'moon')) {
                     this.ctx.beginPath();
                     this.ctx.arc(screenPos.x, screenPos.y, entity.soi * this.zoom, 0, Math.PI * 2);
                     this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)'; 
@@ -396,29 +450,6 @@ export class Renderer {
                     this.ctx.stroke();
                     this.ctx.setLineDash([]);
                 }
-                break;
-
-            case 'station':
-                this.ctx.rect(screenPos.x - r, screenPos.y - r, r * 2, r * 2);
-                this.ctx.lineWidth = 1;
-                this.ctx.stroke();
-                this.ctx.fillRect(screenPos.x - 1, screenPos.y - 1, 2, 2);
-                break;
-            case 'ship':
-                this.ctx.save();
-                this.ctx.translate(screenPos.x, screenPos.y);
-                this.ctx.rotate(entity.heading); 
-                
-                this.ctx.beginPath();
-                this.ctx.moveTo(r * 2, 0); 
-                this.ctx.lineTo(-r, r);    
-                this.ctx.lineTo(-r/2, 0);  
-                this.ctx.lineTo(-r, -r);   
-                this.ctx.closePath();
-                
-                this.ctx.fillStyle = '#ffffff';
-                this.ctx.fill();
-                this.ctx.restore();
                 break;
         }
 

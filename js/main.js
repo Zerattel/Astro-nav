@@ -18,7 +18,8 @@ const p3 = new CelestialBody("Pluto-X", "planet", 4, sun, 800, 0.7, 500, Math.PI
 
 const ship1 = new Ship("UNS-Ares", "Корвет", p2, 70, 0, 0); 
 const ship2 = new Ship("Trident-9", "Фрегат", sun, 300, 0.4, 0, Math.PI);
-
+p2.spriteClass = 'GAS_GIANT'; 
+p2.color = '#ffaa00';
 const systemEntities = [sun, p1, p2, m1, p3, ship1, ship2];
 
 // UI Элементы
@@ -273,11 +274,11 @@ function renderLoop() {
 
     // Сначала рисуем зоны сенсоров (чтобы они были под кораблями)
     if (viewObserver && viewObserver.type === 'ship') {
-        renderer.drawSensorZones(viewObserver);
+        renderer.drawSensorZones(viewObserver, systemEntities);
     } else {
         // В режиме бога рисуем зоны всех кораблей
         systemEntities.forEach(e => {
-            if (e.type === 'ship') renderer.drawSensorZones(e);
+            if (e.type === 'ship') renderer.drawSensorZones(e, systemEntities);
         });
     }
 

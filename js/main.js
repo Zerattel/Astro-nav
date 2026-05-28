@@ -369,8 +369,9 @@ function renderLoop() {
 
     renderer.clear();
 
-    sun.updatePosition(timeManager.time, systemEntities);
-    sun.updateRenderPosition(viewObserver, timeManager.time, C_SPEED);
+    const rootEntity = systemEntities.find(e => !e.parent) || sun;
+    rootEntity.updatePosition(timeManager.time, systemEntities);
+    rootEntity.updateRenderPosition(viewObserver, timeManager.time, C_SPEED);
 
     // Сначала рисуем зоны сенсоров (чтобы они были под кораблями)
     if (viewObserver && viewObserver.type === 'ship') {

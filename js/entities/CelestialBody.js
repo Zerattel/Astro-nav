@@ -35,9 +35,14 @@ export class CelestialBody {
         this.renderA = this.a; this.renderE = this.e; this.renderOmega = this.omega;
     }
 
-    /**
-     * НОВОЕ: Находит параметры орбиты, актуальные для заданного времени в прошлом
-     */
+    calculateSoI() {
+    if (this.parent && this.a > 0) {
+        this.soi = this.a * Math.pow(this.mu / this.parent.mu, 0.4);
+    } else {
+        this.soi = Infinity;
+    }
+}
+
     getHistoricalState(time) {
         // Идем с конца массива к началу, ищем ближайшее прошлое
         for (let i = this.orbitalHistory.length - 1; i >= 0; i--) {

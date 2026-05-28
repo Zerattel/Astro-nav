@@ -265,26 +265,30 @@ export class Editor {
                 this.entities.forEach(entity => {
                     if (entity._parentName) {
                         entity.parent = this.entities.find(e => e.name === entity._parentName) || null;
-                        
-                        if (entity.parent && entity.a > 0) {
-                            // Пересчитываем физику
-                            entity.period = 2 * Math.PI * Math.sqrt(Math.pow(entity.a, 3) / entity.parent.mu);
-                            entity.soi = entity.a * Math.pow(entity.mu / entity.parent.mu, 0.4);
-
-                            // --- КРИТИЧЕСКИ ВАЖНАЯ СТРОКА ---
-                            // Принудительно задаем начальную позицию на орбите
-                            // Используем trueAnomaly = 0 или начальный offset
-                            entity.trueAnomaly = entity.offset || 0; 
-                        }
                     }
                     delete entity._parentName;
                 });
 
+                // 3. Пересобираем children — при создании parent был null,
+                //    поэтому связь parent→children не построилась автоматически
+                this.entities.forEach(e => { e.children = []; });
                 this.entities.forEach(e => {
-                    if (e.type !== 'ship' && e.parent) {
-                        // Это вызовет пересчет позиции через Kepler.getPositionAtAnomaly
-                        e.updatePosition(0); 
+                    if (e.parent) e.parent.children.push(e);
+                });
+
+                // 4. Пересчитываем физику и начальные позиции
+                this.entities.forEach(entity => {
+                    if (entity.parent && entity.a > 0) {
+                        entity.period = 2 * Math.PI * Math.sqrt(
+                            Math.pow(entity.a, 3) / entity.parent.mu
+                        );
+                        entity.calculateSoI();
                     }
+                });
+
+                // 5. Обновляем позиции рекурсивно — только у корней
+                this.entities.forEach(e => {
+                    if (!e.parent) e.updatePosition(0);
                 });
 
                 this.renderList();

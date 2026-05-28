@@ -136,7 +136,7 @@ export class Editor {
         const newType = document.getElementById('ed-type').value;
         entity.color = document.getElementById('ed-color').value;
         entity.radius = parseFloat(document.getElementById('ed-radius').value);
-        entity.mass = parseFloat(document.getElementById('ed-mass').value);
+        entity.mu = parseFloat(document.getElementById('ed-mass').value);
         
         entity.a = parseFloat(document.getElementById('ed-a').value);
         entity.e = parseFloat(document.getElementById('ed-e').value);
@@ -206,11 +206,13 @@ export class Editor {
     }
 
     // --- ЭКСПОРТ / ИМПОРТ ---
+    // --- ЭКСПОРТ / ИМПОРТ ---
     exportJSON() {
         const data = this.entities.map(e => ({
             name: e.name, type: e.type, radius: e.radius,
-            parent: e.parent ? e.parent.name : null, // Сохраняем ТОЛЬКО ИМЯ родителя, чтобы избежать цикличности
-            a: e.a, e: e.e, omega: e.omega, trueAnomaly: e.trueAnomaly, mass: e.mass,
+            parent: e.parent ? e.parent.name : null, 
+            // ИСПРАВЛЕНИЕ 1: Строго экспортируем нужные физические свойства
+            a: e.a, e: e.e, offset: e.offset, omega: e.omega, mu: e.mu,
             color: e.color, spriteClass: e.spriteClass, shipClass: e.shipClass,
             radarRange: e.radarRange, ladarRange: e.ladarRange, magRange: e.magRange
         }));
@@ -242,7 +244,14 @@ export class Editor {
                         if (d.ladarRange) obj.ladarRange = d.ladarRange;
                         if (d.magRange) obj.magRange = d.magRange;
                     } else {
-                        obj = new CelestialBody(d.name, d.type, d.radius, null, d.a, d.e, d.omega, d.trueAnomaly, d.mass);
+                        // ИСПРАВЛЕНИЕ 2: Правильный порядок параметров конструктора!
+                        // Поддерживаем старые сохранения, где масса могла быть записана как d.mass
+                        const mu = d.mu !== undefined ? d.mu : (d.mass !== undefined ? d.mass : 3947.84);
+                        const offset = d.offset !== undefined ? d.offset : 0;
+                        const omega = d.omega !== undefined ? d.omega : 0;
+
+                        // Порядок: name, type, radius, parent, a, e, offset, omega, mu
+                        obj = new CelestialBody(d.name, d.type, d.radius, null, d.a, d.e, offset, omega, mu);
                         if (d.spriteClass) obj.spriteClass = d.spriteClass;
                     }
                     if (d.color) obj.color = d.color;
@@ -256,16 +265,28 @@ export class Editor {
                 this.entities.forEach(entity => {
                     if (entity._parentName) {
                         entity.parent = this.entities.find(e => e.name === entity._parentName) || null;
-                        if (entity.type !== 'ship' && entity.a > 0 && entity.parent) {
+                        
+                        if (entity.parent && entity.a > 0) {
+                            // Пересчитываем физику
+                            entity.period = 2 * Math.PI * Math.sqrt(Math.pow(entity.a, 3) / entity.parent.mu);
                             entity.soi = entity.a * Math.pow(entity.mu / entity.parent.mu, 0.4);
+
+                            // --- КРИТИЧЕСКИ ВАЖНАЯ СТРОКА ---
+                            // Принудительно задаем начальную позицию на орбите
+                            // Используем trueAnomaly = 0 или начальный offset
+                            entity.trueAnomaly = entity.offset || 0; 
                         }
                     }
                     delete entity._parentName;
                 });
 
-                this.renderList();
-                this.formContainer.innerHTML = '';
-                this.onUpdate();
+                this.entities.forEach(e => {
+                    if (e.type !== 'ship' && e.parent) {
+                        // Это вызовет пересчет позиции через Kepler.getPositionAtAnomaly
+                        e.updatePosition(0); 
+                    }
+                });
+
                 this.renderList();
                 this.formContainer.innerHTML = '';
                 this.onUpdate();

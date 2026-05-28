@@ -256,11 +256,16 @@ export class Editor {
                 this.entities.forEach(entity => {
                     if (entity._parentName) {
                         entity.parent = this.entities.find(e => e.name === entity._parentName) || null;
+                        if (entity.type !== 'ship' && entity.a > 0 && entity.parent) {
+                            entity.soi = entity.a * Math.pow(entity.mu / entity.parent.mu, 0.4);
+                        }
                     }
                     delete entity._parentName;
-                    if (entity.type !== 'ship') entity.calculateSoI(); // Пересчитываем SoI
                 });
 
+                this.renderList();
+                this.formContainer.innerHTML = '';
+                this.onUpdate();
                 this.renderList();
                 this.formContainer.innerHTML = '';
                 this.onUpdate();

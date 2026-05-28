@@ -9,6 +9,40 @@ import { generateOrbitPath, getTimeAtAnomaly } from './physics/Kepler.js';
 const renderer = new Renderer('star-map');
 const timeManager = new TimeManager();
 const C_SPEED = 100;
+const GU_TO_KM = 3000; // 1 единица движка = 3000 км
+
+// --- УТИЛИТЫ ФОРМАТИРОВАНИЯ (СИ) ---
+
+function formatTime(totalSeconds) {
+    const d = Math.floor(totalSeconds / 86400);
+    const h = Math.floor((totalSeconds % 86400) / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = Math.floor(totalSeconds % 60);
+    
+    let res = "";
+    if (d > 0) res += `${d}d `;
+    res += `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    return res;
+}
+
+function formatDistance(gu) {
+    const km = gu * GU_TO_KM;
+    if (km < 299792) {
+        // Если дистанция меньше 1 световой секунды, показываем в тысячах километров
+        return `${Math.round(km).toLocaleString('ru-RU')} км`;
+    } else {
+        // Если больше - переводим в световое время (Ls, Lm, Lh)
+        const ls = gu / C_SPEED;
+        if (ls < 60) return `${ls.toFixed(2)} Ls`;
+        if (ls < 3600) return `${(ls / 60).toFixed(2)} Lm`;
+        return `${(ls / 3600).toFixed(2)} Lh`;
+    }
+}
+
+function formatVelocity(guPerSec) {
+    const kmPerSec = guPerSec * GU_TO_KM;
+    return `${kmPerSec.toFixed(2)} км/с`;
+}
 
 // Обрати внимание на последний параметр (omega). Теперь орбиты повернуты!
 const sun = new CelestialBody("Sol-Prime", "star", 15, null, 0, 0, 0, 0, 5000); 
@@ -62,6 +96,11 @@ function updateUI() {
     
     panelTarget.style.display = 'block';
     tgtName.innerText = selectedEntity.name;
+    
+    // Рассчитываем текущую скорость объекта (гипотенуза векторов vx и vy)
+    const velocityGU = Math.hypot(selectedEntity.vx, selectedEntity.vy);
+    const velText = document.getElementById('tgt-vel');
+    if (velText) velText.innerText = formatVelocity(velocityGU);
     
     if (selectedEntity.type === 'ship') {
         tgtType.innerText = `SHIP [${selectedEntity.shipClass}]`;
@@ -252,9 +291,27 @@ warpButtons.forEach(btn => {
     btn.addEventListener('click', (e) => {
         const warp = parseInt(e.target.dataset.warp);
         timeManager.setTimeScale(warp);
-        uiWarp.innerText = warp;
-        warpButtons.forEach(b => b.classList.remove('active'));
-        e.target.classList.add('active');
+        uiWarp.innerText = `x${warp}`;
+    });
+});
+
+btnBurn.addEventListener('click', () => {
+    if (!selectedEntity || selectedEntity.type !== 'ship') return;
+    
+    const courseDeg = parseFloat(inpCourse.value);
+    const courseRad = courseDeg * (Math.PI / 180);
+    
+    // Читаем ввод в км/с и переводим в игровые единицы скорости
+    const dvKmS = parseFloat(inpDv.value);
+    const dvGU = dvKmS / GU_TO_KM; 
+    
+    const delaySec = parseFloat(inpDelay.value);
+    
+    selectedEntity.maneuverNodes.push({
+        time: timeManager.time + delaySec,
+        dvX: Math.cos(courseRad) * dvGU,
+        dvY: Math.sin(courseRad) * dvGU,
+        description: `BURN ${dvKmS} km/s` // Сохраняем красивое значение для логов
     });
 });
 
@@ -308,7 +365,7 @@ function isInLadarCone(observerX, observerY, targetX, targetY, azDeg) {
 // --- ГЛАВНЫЙ ЦИКЛ ---
 function renderLoop() {
     timeManager.update();
-    uiTime.innerText = timeManager.time.toFixed(1);
+    uiTime.innerText = formatTime(timeManager.time);
 
     renderer.clear();
 

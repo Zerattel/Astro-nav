@@ -226,78 +226,65 @@ export class Editor {
     }
 
     importJSON(event) {
-        const file = event.target.files[0];
-        if (!file) return;
+    const file = event.target.files[0];
+    if (!file) return;
 
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const data = JSON.parse(e.target.result);
-                this.entities.length = 0; // Очищаем
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const data = JSON.parse(e.target.result);
+            this.entities.length = 0;
 
-                // 1. Создаем сырые объекты
-                data.forEach(d => {
-                    let obj;
-                    if (d.type === 'ship') {
-                        obj = new Ship(d.name, d.shipClass || "DEFAULT", null, d.a, d.e, d.omega);
-                        if (d.radarRange) obj.radarRange = d.radarRange;
-                        if (d.ladarRange) obj.ladarRange = d.ladarRange;
-                        if (d.magRange) obj.magRange = d.magRange;
-                    } else {
-                        // ИСПРАВЛЕНИЕ 2: Правильный порядок параметров конструктора!
-                        // Поддерживаем старые сохранения, где масса могла быть записана как d.mass
-                        const mu = d.mu !== undefined ? d.mu : (d.mass !== undefined ? d.mass : 3947.84);
-                        const offset = d.offset !== undefined ? d.offset : 0;
-                        const omega = d.omega !== undefined ? d.omega : 0;
+            const dataByName = new Map(data.map(d => [d.name, d]));
+            const created = new Map();
 
-                        // Порядок: name, type, radius, parent, a, e, offset, omega, mu
-                        obj = new CelestialBody(d.name, d.type, d.radius, null, d.a, d.e, offset, omega, mu);
-                        if (d.spriteClass) obj.spriteClass = d.spriteClass;
+            // Создаём объекты сверху вниз: сначала родитель, потом дети.
+            // Это гарантирует что конструктор получит правильный parent.mu
+            // и корректно посчитает period, soi и orbitalHistory[0].period
+            const build = (name, parentObj) => {
+                if (created.has(name)) return;
+                const d = dataByName.get(name);
+                if (!d) return;
+
+                const mu     = d.mu     !== undefined ? d.mu     : (d.mass !== undefined ? d.mass : 3947.84);
+                const offset = d.offset !== undefined ? d.offset : 0;
+                const omega  = d.omega  !== undefined ? d.omega  : 0;
+
+                let obj;
+                if (d.type === 'ship') {
+                    obj = new Ship(d.name, d.shipClass || "DEFAULT", parentObj, d.a, d.e, offset, omega);
+                    if (d.radarRange !== undefined) obj.radarRange = d.radarRange;
+                    if (d.ladarRange !== undefined) obj.ladarRange = d.ladarRange;
+                    if (d.magRange   !== undefined) obj.magRange   = d.magRange;
+                } else {
+                    obj = new CelestialBody(d.name, d.type, d.radius, parentObj, d.a, d.e, offset, omega, mu);
+                    if (d.spriteClass) obj.spriteClass = d.spriteClass;
+                }
+                if (d.color) obj.color = d.color;
+
+                created.set(name, obj);
+                this.entities.push(obj);
+
+                // Рекурсивно создаём детей этого объекта
+                for (const childD of data) {
+                    if (childD.parent === name) {
+                        build(childD.name, obj);
                     }
-                    if (d.color) obj.color = d.color;
-                    
-                    // Временно сохраняем имя родителя как строку
-                    obj._parentName = d.parent;
-                    this.entities.push(obj);
-                });
+                }
+            };
 
-                // 2. Восстанавливаем ссылки на родителей
-                this.entities.forEach(entity => {
-                    if (entity._parentName) {
-                        entity.parent = this.entities.find(e => e.name === entity._parentName) || null;
-                    }
-                    delete entity._parentName;
-                });
-
-                // 3. Пересобираем children — при создании parent был null,
-                //    поэтому связь parent→children не построилась автоматически
-                this.entities.forEach(e => { e.children = []; });
-                this.entities.forEach(e => {
-                    if (e.parent) e.parent.children.push(e);
-                });
-
-                // 4. Пересчитываем физику и начальные позиции
-                this.entities.forEach(entity => {
-                    if (entity.parent && entity.a > 0) {
-                        entity.period = 2 * Math.PI * Math.sqrt(
-                            Math.pow(entity.a, 3) / entity.parent.mu
-                        );
-                        entity.calculateSoI();
-                    }
-                });
-
-                // 5. Обновляем позиции рекурсивно — только у корней
-                this.entities.forEach(e => {
-                    if (!e.parent) e.updatePosition(0);
-                });
-
-                this.renderList();
-                this.formContainer.innerHTML = '';
-                this.onUpdate();
-            } catch (err) {
-                alert("Ошибка чтения файла: " + err.message);
+            // Стартуем с корневых объектов (без родителя)
+            for (const d of data) {
+                if (!d.parent) build(d.name, null);
             }
-        };
-        reader.readAsText(file);
-    }
+
+            this.renderList();
+            this.formContainer.innerHTML = '';
+            this.onUpdate();
+        } catch (err) {
+            alert("Ошибка чтения файла: " + err.message);
+        }
+    };
+    reader.readAsText(file);
+}
 }

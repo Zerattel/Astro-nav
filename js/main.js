@@ -127,10 +127,10 @@ function updateUI() {
 }
 
 const editor = new Editor(systemEntities, () => {
-    // Если выбранного корабля больше нет в массиве (например, после генерации/импорта)
     if (!systemEntities.includes(selectedEntity)) {
         selectedEntity = systemEntities.find(e => e.type === 'ship') || systemEntities[0];
-        viewObserver = selectedEntity;
+        // viewObserver только для кораблей — звезда как наблюдатель ломает светозадержку
+        viewObserver = (selectedEntity?.type === 'ship') ? selectedEntity : null;
         populateEntitySelect();
         updateUI();
     } else {
